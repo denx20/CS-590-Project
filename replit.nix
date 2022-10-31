@@ -1,5 +1,6 @@
 { pkgs }: {
   deps = [
+    pkgs.vim
     pkgs.python38Full
   ];
   env = {
