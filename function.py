@@ -1,9 +1,9 @@
 
-class FunctionTerm: 
+class FunctionTerm:
   # Represents a term in the end function we want to construct
-  # e.g. x^3, 2*f[loc-1], 
-  def __init__(self, type='constant', c=0, exponent1=1, exponent2=None, index_diff1=None, index_diff2=None):
-      
+  # e.g. x^3, 2*f[loc-1],
+  def __init__(self, type='constant', c=1, exponent1=1, exponent2=None, index_diff1=None, index_diff2=None):
+
     self.type = type
     self.coeff = c
     self.exponent1 = exponent1
@@ -32,9 +32,12 @@ class FunctionTerm:
     elif self.type == 'interaction_term':
       return f'{self.coeff}*f[n-{self.index_diff1}]^{self.exponent1}*f[n-{self.index_diff2}]^{self.exponent2}'
 
+  def __repr__(self):
+    return(str(self))
+
   def updateCoeff(self, c):
     self.coeff = c
-  
+
   def evaluate(self, f, loc):
     if self.type == 'constant':
       return self.coeff
@@ -54,16 +57,19 @@ class FunctionTerm:
 
 
 
-class Function: 
+class Function:
 # TODO
   def __init__(self):
     self.terms = dict()
-  
+
   def __str__(self):
     # workaround for comparing None with int, sorted by key (constants before loc_terms before power_terms before interaction terms)
     return '+'.join([v.__str__() for _, v in sorted(self.terms.items(), key=lambda x: tuple([0 if not t else t for t in x[0]])) if v.__str__() != '0'])
-    
-  def addTerm(self, term):
+
+  def __repr__(self):
+    return(str(self))
+
+  def addTerm(self, term: FunctionTerm):
     key = (term.exponent1 or 0, term.exponent2 or 0, term.index_diff1, term.index_diff2, term.type)
     if key not in self.terms:
       self.terms[key] = term
@@ -79,14 +85,14 @@ class Function:
     pass
 
   def startIndex(self): # TODO: apparently this function is NOT working
-    # the minimum index at which function expression is valid 
-    # ex: f[n] = f[n-1] + f[n-2], then this method returns 3, since  
+    # the minimum index at which function expression is valid
+    # ex: f[n] = f[n-1] + f[n-2], then this method returns 3, since
     # f[3] = f[1]+f[2] but f[2] cannot be expressed as f[1] + f[0] because f[0] doesn't exist
     index_diff_list = [(v.index_diff1 or 0) for _, v in self.terms.items()] + [(v.index_diff2 or 0) for _, v in self.terms.items()]
     if len(index_diff_list) == 0:
       return 1
     return max(index_diff_list) + 1
-  
+
   def evaluate(self, f, loc):
     term_values = [v.evaluate(f, loc) for _, v in self.terms.items()]
     if None in term_values:
@@ -94,7 +100,7 @@ class Function:
     return sum(term_values)
 
   def complexity(self):
-    # TODO: Occam's Razor, manually define something like 
+    # TODO: Occam's Razor, manually define something like
     # len(self.terms)**2 + sum([t.exponent1+(t.exponent2 or 0) for t in self.terms.values()])
     # sus
     pass
