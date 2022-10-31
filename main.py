@@ -6,6 +6,10 @@ from copy import deepcopy
 from function import FunctionTerm, Function
 from brute_force_solver import brute_force_grid_search
 
+from sequence_generator import run
+
+run()
+
 class Sus:
   # This is sus
   def __call__(self):

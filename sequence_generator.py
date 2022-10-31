@@ -3,7 +3,7 @@
 from function import Function, FunctionTerm
 import random
 
-def make_possible_terms() -> list[FunctionTerm]:
+def make_possible_terms():
     """Generates a collection of all the possible individual terms. When generating functions, we randomly select terms from this list and assign random integer coefficients to it.
     """
 
@@ -39,7 +39,7 @@ def make_functions(
     num_functions_generated=10,
     num_terms_mean=4, num_terms_stdev=2, min_num_terms=2,
     coefficient_range=(1, 5)
-    ) -> list[Function]:
+    ):
     """Returns a list of (functions, terms used) found by concatenating terms given by make_possible_terms(). The number of terms is drawn from a Gaussian distribution.
 
     terms_used is expressed as a list of indices to the output of make_possible_terms().
@@ -84,7 +84,7 @@ def make_sequence(
     function: Function,
     num_generated_terms = 10,
     initial_terms_range = (1, 3)
-    ) -> list[int]:
+    ):
     """Makes a sequence using the given function. Randomly generates the first few terms where the function is invalid, the index of which is given by Function.startIndex().
 
     Args:
@@ -107,7 +107,9 @@ def make_sequence(
 
     return sequence
 
-if __name__ == '__main__':
+
+
+def run():
     # print(f'Functions generated: {make_functions()}')
 
     f = Function()
@@ -119,3 +121,6 @@ if __name__ == '__main__':
     for f, _ in fs:
         print(f)
         print(make_sequence(f))
+
+if __name__ == '__main__':
+  run()
