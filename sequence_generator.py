@@ -61,7 +61,7 @@ def make_functions(
         possible_terms = make_possible_terms() # Make a copy of this list every iteration
 
         # Select n terms uniquely
-        nterms = int(random.gauss(num_terms_mean, num_terms_stdev))
+        nterms = round(random.gauss(num_terms_mean, num_terms_stdev))
 
         if nterms < min_num_terms:
             continue
@@ -98,7 +98,7 @@ def make_sequence(
 
     sequence = []
     # We first hallucinate the first few terms
-    for i in range(function.startIndex()):
+    for i in range(function.startIndex()-1):
         sequence.append(random.randint(*initial_terms_range))
 
     while len(sequence) != num_generated_terms:
@@ -112,15 +112,27 @@ def make_sequence(
 def run():
     # print(f'Functions generated: {make_functions()}')
 
+    seqs = []
     f = Function()
     f.addTerm(FunctionTerm(type='loc_term', c=1, exponent1=2))
     print(make_sequence(f))
 
-    fs = make_functions()
+    fs = make_functions(1000)
 
     for f, _ in fs:
-        print(f)
-        print(make_sequence(f))
-
+        generated_sequence = make_sequence(f)
+        if max(make_sequence(f)) < 200:
+            print(f)
+            print(generated_sequence)
+            print()
+            seqs.append(generated_sequence)
+    
+    return seqs
+  
 if __name__ == '__main__':
-  run()
+    f = Function()
+    f.addTerm(FunctionTerm(type='constant', c=2))
+    f.addTerm(FunctionTerm(type='loc_term', c=1, exponent1=1, index_diff1=1))
+    print(f)
+    print(make_sequence(f))
+    # run()

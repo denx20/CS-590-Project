@@ -8,7 +8,18 @@ from brute_force_solver import brute_force_grid_search
 
 from sequence_generator import run
 
-run()
+generated_sequences = run()
+
+print('\nBegin testing generated sequences:=========')
+for seq in generated_sequences:
+  print(f'Sequence is : {seq[:10]}')
+  found_f = brute_force_grid_search(seq, 3, -3, 8) # 
+  if found_f:
+    print(found_f.startIndex())
+    print('Found f is', found_f)
+  print()
+print('End testing generated sequences:=========')
+
 
 class Sus:
   # This is sus
@@ -113,8 +124,6 @@ for seq in prototype_sequences:
   print()
 print('End testing prototype sequences:=========')
 '''
-
-
 
 
 class FunctionTree:
