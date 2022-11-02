@@ -56,11 +56,12 @@ class FunctionDataModule(pl.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         self.num_workers = num_workers
-
-    def setup(self, stage: Optional[str] = None) -> None:
         self.train_set = FunctionDataset(size=3000)
         self.val_set = FunctionDataset(size=300)
         self.test_set = FunctionDataset(size=300)
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        pass
 
     def train_dataloader(self):
         return DataLoader(

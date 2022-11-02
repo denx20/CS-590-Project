@@ -25,23 +25,33 @@ class TermPredictor(pl.LightningModule):
     def forward(self, x):
         # Concatenate x with log(x) and log(log(x))
         # TODO: fix this
-        augmented_tensor = torch.zeros(self.input_length* 3)
-        augmented_tensor[0 : self.input_length] = x
-        augmented_tensor[self.input_length : self.input_length * 2] = self.safe_log(x)
-        augmented_tensor[self.input_length * 2: self.input_length * 3] = self.safe_log(self.safe_log(x))
-        augmented_tensor = augmented_tensor[None, :]
+        augmented_tensor = x.repeat((1, 3)) # x is of shape [batch_size, input_length]
+
+        augmented_tensor[:, 0 : self.input_length] = x
+        augmented_tensor[:, self.input_length : self.input_length * 2] = self.safe_log(x)
+        augmented_tensor[:, self.input_length * 2: self.input_length * 3] = self.safe_log(self.safe_log(x))
 
         augmented_tensor = self.a1(augmented_tensor, augmented_tensor, augmented_tensor)[0]
         augmented_tensor = self.a2(augmented_tensor, augmented_tensor, augmented_tensor)[0]
         augmented_tensor = self.a3(augmented_tensor, augmented_tensor, augmented_tensor)[0]
 
-        augmented_tensor = augmented_tensor[0]
+        augmented_tensor = self.fc(augmented_tensor)
+
+        return augmented_tensor
+
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         loss = F.cross_entropy(y_hat, y)
+        self.log("train_loss", loss, on_epoch=True, prog_bar=True, logger=True)
         return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.cross_entropy(y_hat, y)
+        self.log("val_loss", loss)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=0.02)
@@ -52,10 +62,11 @@ if __name__ == '__main__':
     # fd = dataset.FunctionDataset(size=1)
     # i = fd[0]
     # x, y = i
-    # tp.forward(x[None, :])
+    # x = torch.stack((x, x))
+    # o = tp.forward(x)
+    # print(o)
 
     model = TermPredictor()
     dm = dataset.FunctionDataModule()
-
     trainer = pl.Trainer()
     trainer.fit(model, datamodule=dm)
