@@ -104,20 +104,26 @@ def make_n_random_functions(
 
     max_num_coeff = (coefficient_range[1] - coefficient_range[0] + 1) ** nterms
     max_n = len(possible_functions) * max_num_coeff
+    print(max_n)
     if n > max_n:
         raise ValueError(
-            f"Cannot generate more than {max_n} distinct functions with {n} terms and coefficient range {coefficient_range}"
+            f"Cannot generate more than {max_n} distinct functions"
         )
-    cnt = 0
     res = []
     used = defaultdict(set)
-    for _ in tqdm(range(n)):
+    cnt = 0
+    while cnt < n:
         index = np.random.randint(len(possible_functions))
         terms = possible_functions[index]
         indices = list(possible_function_indices[index])
         boolmask = np.zeros(num_possible_terms, dtype=bool)
         boolmask[indices] = True
+        num_trys = 0
         while True:
+            num_trys += 1
+            if num_trys > max_num_coeff:
+                # not a good term, try another one
+                break
             coeff = np.random.randint(
                 coefficient_range[0], coefficient_range[1] + 1, size=len(terms)
             )
@@ -132,6 +138,7 @@ def make_n_random_functions(
             f = Function(terms, coeff)
             sequence = make_sequence(f)
             if max(sequence) <= sequence_bound:
+                cnt += 1
                 if torchify:
                     sequence = torch.tensor(sequence, dtype=torch.float)
                     boolmask = torch.tensor(boolmask, dtype=torch.float)
@@ -226,7 +233,7 @@ def make_functions(
 
 
 def make_sequence(
-    function: Function, num_generated_terms=7, initial_terms_range=(1, 3)
+    function: Function, num_generated_terms=7, initial_terms_range=(1, 1)
 ):
     """Makes a sequence using the given function. Randomly generates the first few terms where the function is invalid, the index of which is given by Function.startIndex().
 
@@ -274,12 +281,13 @@ def run():
 
 if __name__ == "__main__":
     start = timeit.default_timer()
-    n_random_functions = make_n_random_functions(10000, use_interaction=False)
+    n_random_functions = make_n_random_functions(
+        80000, use_interaction=False, coefficient_range=(1, 5))
     end = timeit.default_timer()
     print("Time elapsed", end - start)
     f_strs = [x[0].__str__() for x in n_random_functions]
     seqs = [tuple(x[1]) for x in n_random_functions]
-    assert len(f_strs) == len(set(f_strs))
+    # assert len(f_strs) == len(set(f_strs))
     with open("functions.txt", "w") as f:
         for function in n_random_functions:
             f.write(f"{','.join([str(i) for i in function])}\n")
