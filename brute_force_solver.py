@@ -26,7 +26,7 @@ def brute_force_grid_search(sequence, upper_bound = 5, lower_bound = -5, break_t
 
   def int_to_base_helper(num, base):
     ret = []
-    while num >= base:
+    while num > 0:
       ret.append(num % base)
       num = num // base
     return ret
