@@ -91,6 +91,7 @@ def make_n_random_functions(
     use_interaction=False,
     output_function=False,
     torchify=False,
+    initial_terms_range=(1, 1)
 ):
     """Generates n random functions f with max(sequence(f)) <= sequence_bound."""
 
@@ -136,8 +137,9 @@ def make_n_random_functions(
                     continue
             used[terms].add(tuple(coeff))
             f = Function(terms, coeff)
-            sequence = make_sequence(f)
-            if max(sequence) <= sequence_bound:
+            sequence = make_sequence(
+                f, initial_terms_range=initial_terms_range)
+            if max(abs(max(sequence)), abs(min(sequence))) <= sequence_bound:
                 cnt += 1
                 if torchify:
                     sequence = torch.tensor(sequence, dtype=torch.float)
@@ -282,7 +284,7 @@ def run():
 if __name__ == "__main__":
     start = timeit.default_timer()
     n_random_functions = make_n_random_functions(
-        80000, use_interaction=False, coefficient_range=(1, 5))
+        80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
     end = timeit.default_timer()
     print("Time elapsed", end - start)
     f_strs = [x[0].__str__() for x in n_random_functions]
