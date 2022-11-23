@@ -281,10 +281,33 @@ def run():
     return seqs
 
 
+def make_train_set(ratios=[0, 0, 0.4, 0.6], n=80000,
+                   sequence_bound=1000,
+                   coefficient_range=(1, 5),
+                   use_interaction=False,
+                   output_function=False,
+                   torchify=False,
+                   initial_terms_range=(1, 1)):
+    """
+    ratios: the ith entry represents the desired proportion of the dataset where the sequences 
+    are generated using functions with (i+1) terms
+    """
+    res = []
+    for i, ratio in enumerate(ratios):
+        if ratio:
+            curr_nterms = i+1
+            curr_n = int(ratio*n)
+            res += make_n_random_functions(
+                n=curr_n, nterms=curr_nterms, sequence_bound=sequence_bound, coefficient_range=coefficient_range, use_interaction=use_interaction, output_function=output_function, torchify=torchify, initial_terms_range=initial_terms_range)
+    return res
+
+
 if __name__ == "__main__":
     start = timeit.default_timer()
-    n_random_functions = make_n_random_functions(
-        80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
+    # n_random_functions = make_n_random_functions(
+    #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
+    n_random_functions = make_train_set(use_interaction=False, coefficient_range=(
+        -5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
     end = timeit.default_timer()
     print("Time elapsed", end - start)
     f_strs = [x[0].__str__() for x in n_random_functions]
