@@ -130,3 +130,7 @@ dmypy.json
 
 # generated
 functions.txt
+
+# slurm batch
+*.sh
+*.out

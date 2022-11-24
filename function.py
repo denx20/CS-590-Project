@@ -37,10 +37,10 @@ class FunctionTerm:
             )
 
     def __str__(self):
-        if self.coeff == 0 or self.type == "NULL":
-            return "0"
-        if self.type == "constant":
-            return str(self.coeff)
+        if self.type == 'NULL':
+            return 'NULL'
+        elif self.type == 'constant':
+            return str(self.coeff)+'*1'
         elif self.type == "loc_term":
             return f"{self.coeff}*n^{self.exponent1}"
         elif self.type == "power_term":
@@ -63,12 +63,10 @@ class FunctionTerm:
             if loc - 1 - self.index_diff1 < 0:
                 return None
             return self.coeff * f[loc - 1 - self.index_diff1] ** self.exponent1
-        elif self.type == "interaction_term":
-            return (
-                self.coeff
-                * f[loc - 1 - self.index_diff1] ** self.exponent1
-                * f[loc - 1 - self.index_diff2] ** self.exponent2
-            )
+        elif self.type == 'interaction_term':
+            if loc-1-self.index_diff1 < 0 or loc-1-self.index_diff2 < 0:
+                return None
+            return self.coeff * f[loc-1-self.index_diff1]**self.exponent1 * f[loc-1-self.index_diff2]**self.exponent2
         elif self.type == "NULL":
             return 0
 
