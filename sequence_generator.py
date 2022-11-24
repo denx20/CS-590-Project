@@ -95,6 +95,8 @@ def make_n_random_functions(
 ):
     """Generates n random functions f with max(sequence(f)) <= sequence_bound."""
 
+    np.random.seed(590)
+
     (
         num_possible_terms,
         possible_functions,
