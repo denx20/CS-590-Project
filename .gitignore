@@ -134,3 +134,4 @@ functions.txt
 # slurm batch
 *.sh
 *.out
+*.pt

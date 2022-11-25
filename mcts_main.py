@@ -10,76 +10,42 @@ import random
 from copy import deepcopy
 import pickle
 import argparse
+import string
 
 
-random.seed(590)
-
-# 'loc_term', 'power_term', 'interaction_term'
 
 LEVELS = 4
-TREE_LEVELS = [
-    [FunctionTerm('constant')],
-    [
-      FunctionTerm('loc_term'), 
-      FunctionTerm('power_term', index_diff1=1), 
-      FunctionTerm('power_term', index_diff1=2), 
-      FunctionTerm('power_term', index_diff1=3)
-    ],
-    [
-      FunctionTerm('loc_term', exponent1=2), 
-      FunctionTerm('power_term', exponent1=2, index_diff1=1), 
-      FunctionTerm('power_term', exponent1=2, index_diff1=2), 
-      FunctionTerm('power_term', exponent1=2, index_diff1=3)
-    ],
-    #[
-    # FunctionTerm('loc_term', exponent1=2), 
-    # FunctionTerm('power_term', exponent1=2, index_diff1=1), 
-    # FunctionTerm('power_term', exponent1=2, index_diff1=2), 
-    # FunctionTerm('power_term', exponent1=2, index_diff1=3)
-    #],
-    [
-      FunctionTerm('loc_term', exponent1=3), 
-      FunctionTerm('power_term', exponent1=3, index_diff1=1), 
-      FunctionTerm('power_term', exponent1=3, index_diff1=2), 
-      FunctionTerm('power_term', exponent1=3, index_diff1=3)
-    ],
-    [
-      FunctionTerm('interaction_term', exponent1=1, exponent2=1, index_diff1=1,index_diff2=2), 
-      FunctionTerm('interaction_term', exponent1=1, exponent2=1, index_diff1=1,index_diff2=3), 
-      FunctionTerm('interaction_term', exponent1=1, exponent2=1, index_diff1=2,index_diff2=3)
-    ],
-    [
-      FunctionTerm('interaction_term', exponent1=2, exponent2=1, index_diff1=1, index_diff2=2), 
-      FunctionTerm('interaction_term', exponent1=2, exponent2=1, index_diff1=1, index_diff2=3), 
-      FunctionTerm('interaction_term', exponent1=2, exponent2=1, index_diff1=2, index_diff2=3), 
-      FunctionTerm('interaction_term', exponent1=1, exponent2=2, index_diff1=1, index_diff2=2), 
-      FunctionTerm('interaction_term', exponent1=1, exponent2=2, index_diff1=1, index_diff2=3), 
-      FunctionTerm('interaction_term', exponent1=1, exponent2=2, index_diff1=2, index_diff2=3)
-    ]
+
+POSSIBLE_TERMS = [
+    FunctionTerm(type="constant"),
+    FunctionTerm(type="loc_term", exponent1=1),
+    FunctionTerm(type="loc_term", exponent1=2),
+    FunctionTerm(type="loc_term", exponent1=3),
 ]
+for index_diff in range(1, 4):
+    for power in range(1, 3):
+        POSSIBLE_TERMS.append(FunctionTerm(type="power_term", exponent1=power,index_diff1=index_diff))
 
 
-def generate_term_to_id_map(level):
+def generate_term_to_id_map():
     i = 0
     id_to_func_term = {}
     term_str_to_func_term = {}
     term_str_to_id = {}
     
-    for level in TREE_LEVELS[:level]:
-        for t in level:
-            temp_f = Function()
-            temp_f.addTerm(t)
-            #key = list(temp_f.terms.keys())[0]
-            #term_to_id[key] = i
-            
-            id_to_func_term[i] = t
-            
-            term_str = str(t).replace('0*','').replace('0','1')
-            term_str_to_id[term_str] = i
-            
-            term_str_to_func_term[term_str] = t
-            
-            i += 1
+    
+    for t in POSSIBLE_TERMS:
+        temp_f = Function()
+        temp_f.addTerm(t)
+
+        id_to_func_term[i] = t
+        
+        term_str = str(t).replace('0*','').replace('0','1')
+        term_str_to_id[term_str] = i
+        
+        term_str_to_func_term[term_str] = t
+        
+        i += 1
             
     term_str_to_id['<ROOT>'] = i
     i += 1
@@ -87,7 +53,7 @@ def generate_term_to_id_map(level):
     return id_to_func_term, term_str_to_func_term, term_str_to_id
 
 
-id_to_func_term, term_str_to_func_term, term_str_to_id = generate_term_to_id_map(LEVELS)
+id_to_func_term, term_str_to_func_term, term_str_to_id = generate_term_to_id_map()
 #print(term_str_to_id)
 id_to_term_str = {v:k for k,v in term_str_to_id.items()}
 #print(id_to_term_str)
@@ -152,7 +118,7 @@ class MCTS():
     This class handles the MCTS tree.
     """
 
-    def __init__(self, vocab_size, target_seq, neural_network, max_depth=len(TREE_LEVELS), numMCTSSims=20, cpuct=1, 
+    def __init__(self, vocab_size, target_seq, neural_network, max_depth=LEVELS, numMCTSSims=20, cpuct=1, 
                  reward=1, penalty=-1, coeff_upper_bound=5, coeff_lower_bound=-5):
         
         # MCTS hyperparameters
@@ -357,7 +323,7 @@ class MCTS():
 class MCTSTrainer():
 
     def __init__(self, target_seq, vocab_size, numIters, numEpisodes, mcts_args, 
-                 nn_args=None, neural_network=None, max_length=len(TREE_LEVELS), 
+                 nn_args=None, neural_network=None, max_length=LEVELS, 
                  coeff_upper_bound=5, coeff_lower_bound=-5):
         
         if not nn_args and not neural_network:
@@ -568,14 +534,20 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
     temp_s = root
     
     rmse = 1e7
-    
-    for _ in range(10):
-        if temp_s.endswith('<EOS>') or rmse <= 1:
+    minimum_rmse = 1e7
+    best_state = None
+
+    for _ in range(LEVELS+1):
+        if temp_s.endswith('<EOS>'):
             break
 
         print('Proposal:', temp_s)
         rmse = eval_expression_rmse(sequence, temp_s)
         print('Is it correct? Loss =', rmse)
+
+        if rmse < minimum_rmse:
+            minimum_rmse = rmse
+            best_state = temp_s
 
         reward_list = np.ones(TERM_TYPES) * -np.inf
         valids = helper_mcts.getValidMoves(temp_s)
@@ -594,55 +566,130 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
     print('Reward:', temp_reward)
     print('Is it correct? Loss =', eval_expression_rmse(sequence, temp_s))
     print('-'*60)
+    
+    return minimum_rmse, best_state
 
 
 if __name__ == '__main__':
-    print('Number of terms =',TERM_TYPES)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--nterms', type=int, help='number of terms in ground-truth function', default=2)
+    parser.add_argument('--mctssims', type=int, help='number of MCTS Simulations to run to get action probability', default=1000)
+    parser.add_argument('--model_type', type=str, help='model type, MLP or GRU', default="MLP")
+    parser.add_argument('--hint', type=bool, help='whether to use hint to help guide MCTS', default=False)
 
+    input_args = parser.parse_args()
+
+    rand_tag = "".join(list(np.random.choice(list(string.ascii_lowercase), 10)))
+    print('Experiment tag =', rand_tag)
+    print('Number of possible terms =', TERM_TYPES)
+    for t in POSSIBLE_TERMS:
+        print(t)
+
+    nterms = input_args.nterms
+    assert nterms <= LEVELS, 'nterms must not exceed max depth!'
+    print('Number of terms in ground-truth expression =', nterms)
+
+    
+    np.random.seed(590)
+    random.seed(590)
     data = make_n_random_functions(
         n=1000,
         sequence_bound=1000,
-        nterms=2,
+        nterms=nterms,
         coefficient_range=(-5, 5),
         initial_terms_range=(1, 3)
     )
 
-    sequence_list = [d[0] for d in data]
-    sequence_length = len(sequence_list[0])
+    random.shuffle(data)
+    N_train = int(0.8*len(data))
+    train_data, test_data = data[:N_train], data[N_train:]
 
+    with open('mcts_train_data.pkl', 'wb') as f:
+        pickle.dump(train_data, f)
+    
+    with open('mcts_test_data.pkl', 'wb') as f:
+        pickle.dump(test_data, f)
+
+    train_sequence_list = [d[0] for d in train_data]
+    test_sequence_list = [d[0] for d in test_data]
+    sequence_length = len(data[0][0])
+
+    # Experiment args
     # MCTS args
     mcts_args = {
-        'maxTreeLevel': 4,
-        'numMCTSSims': 1000,
+        'maxTreeLevel': LEVELS,
+        'numMCTSSims': input_args.mctssims,
         'cpuct': 1   
     }
     reward = 10
+    print('MCTS parameters:')
+    print(mcts_args)
+    print('reward =', reward)
+    print('')
 
     # neural network args
+    model_type = input_args.model_type
     embed_size = 20
-    hidden_size = 30 
+    hidden_size = 40
     num_layers = 3
+    print('Neural Network parameters:')
+    print(f'architecture={model_type}, embed_size={embed_size}, hidden_size={hidden_size}, num_layers={num_layers}')
+    print('')
+    if model_type == 'MLP':
+        model = MCTS_MLP(TERM_TYPES, embed_size, hidden_size, num_layers, sequence_length)
+    elif model_type == 'GRU':
+        model = MCTS_GRU(TERM_TYPES, embed_size, hidden_size, num_layers, sequence_length)
+    else:
+        raise NotImplementedError(f'unrecognized model type {model_type}')
 
     # MCTS trainer args
-    numIters = 5
+    numIters = 3
     numEpisodes = 4
+    use_hint = input_args.hint
+    print('Neural MCTS training parameters:')
+    print(f'# of iterations={numIters}, # of episodes per iteration={numEpisodes}')
+    print('Using hint?', use_hint)
 
-
-    #model = MCTS_MLP(TERM_TYPES, embed_size, hidden_size, num_layers, sequence_length) 
-    model = MCTS_GRU(TERM_TYPES, embed_size, hidden_size, num_layers, sequence_length)
-
+    print('='*30 + 'Training begins now' + '='*30)
     all_examples = []
 
-    for i, seq in enumerate(sequence_list[:1]):
+    # Training
+    for i, seq in enumerate(train_sequence_list):
         print("Sequence", i)
+        print("Sequence is:", seq)
         trainer = MCTSTrainer(seq, TERM_TYPES, numIters, numEpisodes, mcts_args, neural_network=model)
+        if use_hint:
+            ground_truth_terms = np.array(train_data[i][1])
+            hint_term_id = np.random.choice(len(POSSIBLE_TERMS), p=ground_truth_terms/ground_truth_terms.sum())
+            print(f'Hinting MCTS to search node "<ROOT>|{id_to_term_str[hint_term_id]}"')
+            trainer.executeEpisode(root='<ROOT>|'+id_to_term_str[hint_term_id])
+        
         trainer.learn(reward=reward, num_train_epochs=1)
         for e in trainer.examples:
             all_examples.append([seq]+e)
         model = trainer.nn
 
-    print(len(all_examples))
-    print(all_examples[0])
+    print("Number of training examples collected =", len(all_examples))
+    with open('mcts_training_examples.pkl', 'wb') as f:
+        pickle.dump(all_examples, f)
+
+    torch.save(model, f'mcts_model_{rand_tag}.pt')
+
+    print('='*30 + 'Evaluation begins now' + '='*30)
+    rmse_list = []
+    best_state_list = []
+    perfect_counts = 0
+    # Evaluation
+    for seq in test_sequence_list:
+        rmse, best_state = eval_nn(seq, trainer.nn)
+        rmse_list.append(rmse)
+        best_state_list.append(best_state)
+        if rmse == 0:
+            perfect_counts += 1
+    
+    print('Mean RMSE on test data:', sum(rmse_list)/len(rmse_list))
+    print('Number of perfectly solved examples:', perfect_counts)
+    
 
     
     
