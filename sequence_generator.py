@@ -9,6 +9,8 @@ import timeit
 import torch
 from tqdm import tqdm
 
+np.random.seed(590)
+
 
 def make_possible_terms(use_interaction=False):
     """Generates a collection of all the possible individual terms. When generating functions, we randomly select terms from this list and assign random integer coefficients to it."""
@@ -95,8 +97,6 @@ def make_n_random_functions(
 ):
     """Generates n random functions f with max(sequence(f)) <= sequence_bound."""
 
-    #np.random.seed(590)
-
     (
         num_possible_terms,
         possible_functions,
@@ -107,7 +107,6 @@ def make_n_random_functions(
 
     max_num_coeff = (coefficient_range[1] - coefficient_range[0] + 1) ** nterms
     max_n = len(possible_functions) * max_num_coeff
-    print(max_n)
     if n > max_n:
         raise ValueError(
             f"Cannot generate more than {max_n} distinct functions"
@@ -147,9 +146,9 @@ def make_n_random_functions(
                     sequence = torch.tensor(sequence, dtype=torch.float)
                     boolmask = torch.tensor(boolmask, dtype=torch.float)
                 if output_function:
-                    res.append((f, sequence, boolmask))
+                    res.append((f, sequence, boolmask.tolist()))
                 else:
-                    res.append((sequence, boolmask))
+                    res.append((sequence, boolmask.tolist()))
                 break
 
     return res
@@ -181,61 +180,6 @@ def make_random_function(
             return f, sequence, boolean_term_mask
 
 
-# DEPRECATED: USE make_random_function() INSTEAD
-def make_functions(
-    num_functions_generated=10,
-    num_terms_mean=4,
-    num_terms_stdev=2,
-    min_num_terms=2,
-    coefficient_range=(1, 5),
-):
-    """
-    DEPRECATED: USE make_random_function() INSTEAD
-
-    Returns a list of (functions, terms used) found by concatenating terms given by make_possible_terms(). The number of terms is drawn from a Gaussian distribution.
-
-    terms_used is expressed as a list of indices to the output of make_possible_terms().
-
-    Args:
-        num_functions_generated (int, optional): Number of functions to generate. Defaults to 10.
-        num_terms_mean (int, optional): Average number of terms. Defaults to 4.
-        num_terms_stdev (int, optional): Standard deviation of number of terms. Defaults to 2.
-        min_num_terms (int, optional): Each function returned with have at least this many terms. Defaults to 2.
-        coefficient_range (tuple, optional): Range of coefficients before each term. Defaults to (1, 5).
-    """
-
-    # print(f'Params passed to make_functions(): {locals()}')
-    # possible_terms = make_possible_terms()
-    # print(f'Possible terms: {possible_terms}')
-
-    out = []  # the list of functions to return
-    while len(out) != num_functions_generated:
-        possible_terms = (
-            make_possible_terms()
-        )  # Make a copy of this list every iteration
-
-        # Select n terms uniquely
-        nterms = round(random.gauss(num_terms_mean, num_terms_stdev))
-
-        if nterms < min_num_terms:
-            continue
-        if nterms > len(possible_terms):
-            continue
-
-        f = Function()
-        term_choices = random.sample(range(len(possible_terms)), k=nterms)
-        for term_index in term_choices:
-            t = possible_terms[term_index]
-            t.updateCoeff(
-                random.randint(*coefficient_range)
-            )  # randomly assign coefficient
-            f.addTerm(t)
-
-        out.append((f, term_choices))
-
-    return out
-
-
 def make_sequence(
     function: Function, num_generated_terms=7, initial_terms_range=(1, 1)
 ):
@@ -253,7 +197,7 @@ def make_sequence(
     sequence = []
     # We first hallucinate the first few terms
     for i in range(function.startIndex() - 1):
-        sequence.append(random.randint(*initial_terms_range))
+        sequence.append(np.random.randint(low=initial_terms_range[0], high=initial_terms_range[1]+1))
 
     while len(sequence) != num_generated_terms:
         # evaluate the function on previous terms
@@ -270,26 +214,26 @@ def run():
     f.addTerm(FunctionTerm(type="loc_term", c=1, exponent1=2))
     print(make_sequence(f))
 
-    fs = make_functions(1000)
+    # fs = make_functions(1000)
 
-    for f, _ in fs:
-        generated_sequence = make_sequence(f)
-        if max(make_sequence(f)) < 200:
-            print(f)
-            print(generated_sequence)
-            print()
-            seqs.append(generated_sequence)
+    # for f, _ in fs:
+    #     generated_sequence = make_sequence(f)
+    #     if max(make_sequence(f)) < 200:
+    #         print(f)
+    #         print(generated_sequence)
+    #         print()
+    #         seqs.append(generated_sequence)
 
     return seqs
 
 
-def make_train_set(ratios=[0, 0, 0.4, 0.6], n=80000,
+def make_train_set(ratios=[0, 0.5, 0.5], n=2000,
                    sequence_bound=1000,
-                   coefficient_range=(1, 5),
+                   coefficient_range=(-5, 5),
                    use_interaction=False,
                    output_function=False,
                    torchify=False,
-                   initial_terms_range=(1, 1)):
+                   initial_terms_range=(1, 3)):
     """
     ratios: the ith entry represents the desired proportion of the dataset where the sequences 
     are generated using functions with (i+1) terms
@@ -308,8 +252,7 @@ if __name__ == "__main__":
     start = timeit.default_timer()
     # n_random_functions = make_n_random_functions(
     #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
-    n_random_functions = make_train_set(use_interaction=False, coefficient_range=(
-        -5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
+    n_random_functions = make_train_set()
     end = timeit.default_timer()
     print("Time elapsed", end - start)
     f_strs = [x[0].__str__() for x in n_random_functions]
@@ -319,3 +262,58 @@ if __name__ == "__main__":
         for function in n_random_functions:
             f.write(f"{','.join([str(i) for i in function])}\n")
     f.close()
+
+
+# DEPRECATED: USE make_random_function() INSTEAD
+# def make_functions(
+#     num_functions_generated=10,
+#     num_terms_mean=4,
+#     num_terms_stdev=2,
+#     min_num_terms=2,
+#     coefficient_range=(1, 5),
+# ):
+#     """
+#     DEPRECATED: USE make_random_function() INSTEAD
+
+#     Returns a list of (functions, terms used) found by concatenating terms given by make_possible_terms(). The number of terms is drawn from a Gaussian distribution.
+
+#     terms_used is expressed as a list of indices to the output of make_possible_terms().
+
+#     Args:
+#         num_functions_generated (int, optional): Number of functions to generate. Defaults to 10.
+#         num_terms_mean (int, optional): Average number of terms. Defaults to 4.
+#         num_terms_stdev (int, optional): Standard deviation of number of terms. Defaults to 2.
+#         min_num_terms (int, optional): Each function returned with have at least this many terms. Defaults to 2.
+#         coefficient_range (tuple, optional): Range of coefficients before each term. Defaults to (1, 5).
+#     """
+
+#     # print(f'Params passed to make_functions(): {locals()}')
+#     # possible_terms = make_possible_terms()
+#     # print(f'Possible terms: {possible_terms}')
+
+#     out = []  # the list of functions to return
+#     while len(out) != num_functions_generated:
+#         possible_terms = (
+#             make_possible_terms()
+#         )  # Make a copy of this list every iteration
+
+#         # Select n terms uniquely
+#         nterms = round(random.gauss(num_terms_mean, num_terms_stdev))
+
+#         if nterms < min_num_terms:
+#             continue
+#         if nterms > len(possible_terms):
+#             continue
+
+#         f = Function()
+#         term_choices = random.sample(range(len(possible_terms)), k=nterms)
+#         for term_index in term_choices:
+#             t = possible_terms[term_index]
+#             t.updateCoeff(
+#                 random.randint(*coefficient_range)
+#             )  # randomly assign coefficient
+#             f.addTerm(t)
+
+#         out.append((f, term_choices))
+
+#     return out
