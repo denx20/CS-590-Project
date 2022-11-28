@@ -11,6 +11,8 @@ from copy import deepcopy
 import pickle
 import argparse
 import string
+import os
+import pandas as pd
 
 
 
@@ -570,6 +572,38 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
     return minimum_rmse, best_state
 
 
+def save_results(tag, avg_rmse, correct_count, term_types, nterms, model_type, use_hint, nn_args, 
+                numMCTSSims, depth_limit, mcts_cpuct, iters, episodes, reward):
+    if os.path.isfile('mcts_experiment_results.csv'):
+        df = pd.read_csv('mcts_experiment_results.csv', index_col=0)
+    else:
+        df = pd.DataFrame(
+                columns=['tag', 'avg_rmse', 'correct_count', 'term_types', 'nterms', 'model', 'nn_hyperparams', 'use_hint', 'numMCTSSims', 'depth_limit', 'mcts_cpuct', 'iters', 'episodes', 'reward']
+            )
+    
+    new_df = {
+        'tag': tag,
+        'avg_rmse': avg_rmse, 
+        'correct_count': correct_count,
+        'term_types': term_types, 
+        'nterms': nterms, 
+        'model': model_type, 
+        'nn_hyperparams': str(nn_args), 
+        'use_hint': use_hint, 
+        'numMCTSSims': numMCTSSims, 
+        'depth_limit': depth_limit, 
+        'mcts_cpuct': mcts_cpuct,
+        'iters': iters, 
+        'episodes': episodes, 
+        'reward': reward
+    }
+
+    df = df.append(new_df, ignore_index = True)
+    df.to_csv('mcts_experiment_results.csv')
+    
+
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--nterms', type=int, help='number of terms in ground-truth function', default=2)
@@ -604,15 +638,27 @@ if __name__ == '__main__':
     N_train = int(0.8*len(data))
     train_data, test_data = data[:N_train], data[N_train:]
 
-    with open('mcts_train_data.pkl', 'wb') as f:
+    '''
+    with open(f'mcts_train_data_{nterms}terms.pkl', 'wb') as f:
         pickle.dump(train_data, f)
     
-    with open('mcts_test_data.pkl', 'wb') as f:
+    with open(f'mcts_test_data_{nterms}terms.pkl', 'wb') as f:
         pickle.dump(test_data, f)
+    '''
 
+    '''
+    # Load previously generated data
+    with open(f'mcts_train_data_{nterms}terms.pkl', 'rb') as f:
+        train_data = pickle.load(f)
+    
+    with open(f'mcts_test_data_{nterms}terms.pkl', 'rb') as f:
+        test_data = pickle.load(f)
+    '''
+    
     train_sequence_list = [d[0] for d in train_data]
     test_sequence_list = [d[0] for d in test_data]
-    sequence_length = len(data[0][0])
+    sequence_length = len(train_data[0][0])
+    
 
     # Experiment args
     # MCTS args
@@ -629,16 +675,20 @@ if __name__ == '__main__':
 
     # neural network args
     model_type = input_args.model_type
-    embed_size = 20
-    hidden_size = 40
-    num_layers = 3
+    nn_args = {
+        'embed_size': 20,
+        'hidden_size': 40,
+        'num_layers': 3
+    }
     print('Neural Network parameters:')
-    print(f'architecture={model_type}, embed_size={embed_size}, hidden_size={hidden_size}, num_layers={num_layers}')
+    print(f"architecture={model_type}, embed_size={nn_args['embed_size']}, hidden_size={nn_args['hidden_size']}, num_layers={nn_args['num_layers']}")
     print('')
     if model_type == 'MLP':
-        model = MCTS_MLP(TERM_TYPES, embed_size, hidden_size, num_layers, sequence_length)
+        model = MCTS_MLP(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
     elif model_type == 'GRU':
-        model = MCTS_GRU(TERM_TYPES, embed_size, hidden_size, num_layers, sequence_length)
+        model = MCTS_GRU(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
+    elif model_type == 'Transformer':
+        model = MCTS_Transformer()
     else:
         raise NotImplementedError(f'unrecognized model type {model_type}')
 
@@ -687,8 +737,13 @@ if __name__ == '__main__':
         if rmse == 0:
             perfect_counts += 1
     
-    print('Mean RMSE on test data:', sum(rmse_list)/len(rmse_list))
+    avg_rmse = sum(rmse_list)/len(rmse_list)
+    print('Mean RMSE on test data:', avg_rmse)
     print('Number of perfectly solved examples:', perfect_counts)
+
+    # save experiment run results to csv file
+    save_results(rand_tag, avg_rmse, perfect_counts, TERM_TYPES, nterms, model_type, use_hint, nn_args, 
+                mcts_args['numMCTSSims'], mcts_args['maxTreeLevel'], mcts_args['cpuct'], numIters, numEpisodes, reward)
     
 
     
