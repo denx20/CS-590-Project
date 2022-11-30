@@ -1,5 +1,5 @@
 import copy
-import pickle
+import _pickle as pickle
 
 
 class FunctionTerm:

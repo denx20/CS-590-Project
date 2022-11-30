@@ -9,7 +9,11 @@ import timeit
 import torch
 from tqdm import tqdm
 
+# training set seed
 np.random.seed(590)
+
+# test set seed
+# np.random.seed(290)
 
 
 def make_possible_terms(use_interaction=False):
@@ -114,6 +118,7 @@ def make_n_random_functions(
     res = []
     used = defaultdict(set)
     cnt = 0
+    added = set()
     while cnt < n:
         index = np.random.randint(len(possible_functions))
         terms = possible_functions[index]
@@ -123,7 +128,7 @@ def make_n_random_functions(
         num_trys = 0
         while True:
             num_trys += 1
-            if num_trys > max_num_coeff:
+            if num_trys > (coefficient_range[1] - coefficient_range[0] + 1) ** len(indices):
                 # not a good term, try another one
                 break
             coeff = np.random.randint(
@@ -140,7 +145,8 @@ def make_n_random_functions(
             f = Function(terms, coeff)
             sequence = make_sequence(
                 f, initial_terms_range=initial_terms_range)
-            if max(abs(max(sequence)), abs(min(sequence))) <= sequence_bound:
+            if max(abs(max(sequence)), abs(min(sequence))) <= sequence_bound and (str(sequence), str(boolmask)) not in added:
+                added.add((str(sequence), str(boolmask)))
                 cnt += 1
                 if torchify:
                     sequence = torch.tensor(sequence, dtype=torch.float)
@@ -181,7 +187,7 @@ def make_random_function(
 
 
 def make_sequence(
-    function: Function, num_generated_terms=7, initial_terms_range=(1, 1)
+    function: Function, num_generated_terms=9, initial_terms_range=(1, 1)
 ):
     """Makes a sequence using the given function. Randomly generates the first few terms where the function is invalid, the index of which is given by Function.startIndex().
 
@@ -197,7 +203,8 @@ def make_sequence(
     sequence = []
     # We first hallucinate the first few terms
     for i in range(function.startIndex() - 1):
-        sequence.append(np.random.randint(low=initial_terms_range[0], high=initial_terms_range[1]+1))
+        sequence.append(np.random.randint(
+            low=initial_terms_range[0], high=initial_terms_range[1]+1))
 
     while len(sequence) != num_generated_terms:
         # evaluate the function on previous terms
@@ -227,7 +234,7 @@ def run():
     return seqs
 
 
-def make_train_set(ratios=[0, 0.5, 0.5], n=2000,
+def make_train_set(ratios=[0, 0.5, 0.5], n=1600,
                    sequence_bound=1000,
                    coefficient_range=(-5, 5),
                    use_interaction=False,
@@ -252,13 +259,18 @@ if __name__ == "__main__":
     start = timeit.default_timer()
     # n_random_functions = make_n_random_functions(
     #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
-    n_random_functions = make_train_set()
+    n_random_functions = make_train_set(
+        ratios=[0, 1], n=800)
     end = timeit.default_timer()
     print("Time elapsed", end - start)
-    f_strs = [x[0].__str__() for x in n_random_functions]
-    seqs = [tuple(x[1]) for x in n_random_functions]
-    # assert len(f_strs) == len(set(f_strs))
-    with open("functions.txt", "w") as f:
+    f_strs = [(str(x[0]), str(x[1])) for x in n_random_functions]
+    seen = set()
+    for s in f_strs:
+        if s in seen:
+            print(s)
+        else:
+            seen.add(s)
+    with open("data/train/2.csv", "w") as f:
         for function in n_random_functions:
             f.write(f"{','.join([str(i) for i in function])}\n")
     f.close()
