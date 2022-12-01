@@ -300,7 +300,7 @@ class MCTS():
         
         return ret
         
-    def getReward(self, s):
+    def getReward(self, s, use_regression=True):
         # TODO: implement this method
         term_list = s.split('|')[1:]
         terms = []
@@ -309,9 +309,31 @@ class MCTS():
             if t != '<ROOT>' and t != '<EOS>':
                 terms.append(term_str_to_func_term[t])
         
+        if use_regression:
+            start_index = 0
+            for t in terms:
+                t.updateCoeff(1)
+                start_index = max(start_index, (t.index_diff1 or 0), (t.index_diff2 or 0))
+            
+            X = np.zeros((len(self.target_seq)-start_index, len(terms)))
+            y = np.array(self.target_seq[start_index:])
+
+            for i in range(len(y)):
+                for j, term in enumerate(terms):
+                    X[i,j] = term.evaluate(self.target_seq, start_index+i+1)
+
+            beta = np.linalg.pinv(X).dot(y)
+            beta = np.round_(beta)
+            for i in range(len(beta)):
+                if beta[i] > self.coeff_upper_bound:
+                    beta[i] = self.coeff_upper_bound
+                elif beta[i] < self.coeff_lower_bound:
+                    beta[i] = self.coeff_lower_bound
+                
+            penalty = np.sum((y - X.dot(beta))**2)
         
-        #len(term_list)-2
-        penalty = grid_search(self.target_seq, terms, upper_bound=self.coeff_upper_bound, 
+        else:
+            penalty = grid_search(self.target_seq, terms, upper_bound=self.coeff_upper_bound, 
                              lower_bound=self.coeff_lower_bound)
         
         if penalty == 0:
@@ -602,6 +624,28 @@ def save_results(tag, avg_rmse, correct_count, term_types, nterms, model_type, u
     df.to_csv('mcts_experiment_results.csv')
     
 
+def load_data(nterms, train_data=True):
+    # return a list [sequence, mask] elements
+    if train_data:
+        df = pd.read_csv(f'data/train/{nterms}/{nterms}.csv', names=['prompt', 'completion'], delimiter='],', engine='python')
+    else:
+        df = pd.read_csv(f'data/test/{nterms}/{nterms}.csv', names=['prompt', 'completion'], delimiter='],', engine='python')
+    
+    data = []
+    for i in range(len(df)):
+        seq = df.loc[i, 'prompt']
+        seq = seq.replace('[','').replace(']','')
+        seq = seq.split(',')
+        seq = [int(s) for s in seq]
+
+        mask =df.loc[i, 'completion']
+        mask = mask.replace('[','').replace(']','')
+        mask = mask.split(',')
+        mask = [eval(s) for s in mask]
+
+        data.append([seq, mask])
+    
+    return data
 
 
 if __name__ == '__main__':
@@ -623,7 +667,7 @@ if __name__ == '__main__':
     assert nterms <= LEVELS, 'nterms must not exceed max depth!'
     print('Number of terms in ground-truth expression =', nterms)
 
-    
+    '''
     np.random.seed(590)
     random.seed(590)
     data = make_n_random_functions(
@@ -637,6 +681,7 @@ if __name__ == '__main__':
     random.shuffle(data)
     N_train = int(0.8*len(data))
     train_data, test_data = data[:N_train], data[N_train:]
+    '''
 
     '''
     with open(f'mcts_train_data_{nterms}terms.pkl', 'wb') as f:
@@ -654,10 +699,14 @@ if __name__ == '__main__':
     with open(f'mcts_test_data_{nterms}terms.pkl', 'rb') as f:
         test_data = pickle.load(f)
     '''
-    
+
+    # load data
+    train_data = load_data(nterms, train_data=True)
+    test_data = load_data(nterms, train_data=False)
+
     train_sequence_list = [d[0] for d in train_data]
     test_sequence_list = [d[0] for d in test_data]
-    sequence_length = len(train_data[0][0])
+    sequence_length = len(train_sequence_list[0])
     
 
     # Experiment args
@@ -720,10 +769,11 @@ if __name__ == '__main__':
         model = trainer.nn
 
     print("Number of training examples collected =", len(all_examples))
-    with open('mcts_training_examples.pkl', 'wb') as f:
-        pickle.dump(all_examples, f)
+    #with open('mcts_training_examples.pkl', 'wb') as f:
+    #    pickle.dump(all_examples, f)
 
-    torch.save(model, f'mcts_model_{rand_tag}.pt')
+    # Save model
+    torch.save(model, f'mcts_models/mcts_model_{rand_tag}.pt')
 
     print('='*30 + 'Evaluation begins now' + '='*30)
     rmse_list = []
