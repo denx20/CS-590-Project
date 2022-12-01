@@ -58,15 +58,15 @@ class FunctionTerm:
         if self.type == "constant":
             return self.coeff
         elif self.type == "loc_term":
-            return self.coeff * (loc) ** self.exponent1
+            return pow(self.coeff * (loc), self.exponent1)
         elif self.type == "power_term":
             if loc - 1 - self.index_diff1 < 0:
                 return None
-            return self.coeff * f[loc - 1 - self.index_diff1] ** self.exponent1
+            return pow(self.coeff * f[loc - 1 - self.index_diff1], self.exponent1)
         elif self.type == 'interaction_term':
             if loc-1-self.index_diff1 < 0 or loc-1-self.index_diff2 < 0:
                 return None
-            return self.coeff * f[loc-1-self.index_diff1]**self.exponent1 * f[loc-1-self.index_diff2]**self.exponent2
+            return pow(self.coeff * f[loc-1-self.index_diff1]**self.exponent1 * f[loc-1-self.index_diff2], self.exponent2)
         elif self.type == "NULL":
             return 0
 

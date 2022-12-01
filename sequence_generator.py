@@ -187,7 +187,7 @@ def make_random_function(
 
 
 def make_sequence(
-    function: Function, num_generated_terms=9, initial_terms_range=(1, 1)
+    function: Function, num_generated_terms=7, initial_terms_range=(1, 1)
 ):
     """Makes a sequence using the given function. Randomly generates the first few terms where the function is invalid, the index of which is given by Function.startIndex().
 
@@ -270,7 +270,7 @@ if __name__ == "__main__":
             print(s)
         else:
             seen.add(s)
-    with open("data/train/2.csv", "w") as f:
+    with open("data/train/2/2.csv", "w") as f:
         for function in n_random_functions:
             f.write(f"{','.join([str(i) for i in function])}\n")
     f.close()
