@@ -1,9 +1,7 @@
 from function import FunctionTerm, Function
-from sequence_generator import make_n_random_functions
 from mcts_networks import *
 import numpy as np
 import torch
-#import pytorch_lightning as pl
 
 import math
 import random
@@ -346,7 +344,7 @@ class MCTS():
 
 class MCTSTrainer():
 
-    def __init__(self, target_seq, vocab_size, numIters, numEpisodes, mcts_args, 
+    def __init__(self, target_seq, vocab_size, numIters, numEpisodes, mcts_args, opt, scheduler=None,
                  nn_args=None, neural_network=None, max_length=LEVELS, 
                  coeff_upper_bound=5, coeff_lower_bound=-5):
         
@@ -368,7 +366,11 @@ class MCTSTrainer():
             self.nn = MCTS_GRU(vocab_size, nn_args['embed_size'], nn_args['hidden_size'], 
                                nn_args['num_layers'], len(target_seq), nn_args['embedding_weights'])
             
-        #self.opt = torch.optim.Adam(self.nn.parameters())
+        self.opt = opt
+        self.scheduler = scheduler
+        if self.opt is None:
+            self.opt = torch.optim.Adam(self.nn.parameters())
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.opt, patience=20)
         
         self.mcts_args = mcts_args
         self.mcts = MCTS(vocab_size, target_seq, self.nn, max_depth=self.mcts_args['maxTreeLevel'], 
@@ -452,10 +454,6 @@ class MCTSTrainer():
         only if it wins >= updateThreshold fraction of games.
         """
         
-        # TODO: delete this later
-        def isBetter(a,b):
-            return True
-        
         for i in range(self.numIters):
             print(f'=== Iter {i} ===')
             examples = []
@@ -479,16 +477,15 @@ class MCTSTrainer():
             self.examples += examples
             
             print('Training neural network...')
-            new_nn = self.trainNN(deepcopy(self.nn), examples, num_train_epochs)
+            self.trainNN(examples, num_train_epochs)
             
             
             # if trained neural networks are better than old neural network, then replace old neural network
-            if isBetter(new_nn, self.nn):   # TODO: define this function
-                self.nn = new_nn
+            #if isBetter(new_nn, self.nn):   # TODO: define this function
+            #    self.nn = new_nn
         
         
-        
-    def trainNN(self, neural_net, examples, num_train_epochs=10):
+    def trainNN(self, examples, num_train_epochs=1):
         # each element in examples has the form [state, Ps[s], z]
         # loss function = (v(s)-z)^2 - pi log p(s)
         
@@ -498,12 +495,12 @@ class MCTSTrainer():
             ce_loss = torch.nn.CrossEntropyLoss()
             return (nn_value - mcts_value)**2 + ce_loss(nn_policy, mcts_policy)
         
-        opt = torch.optim.Adam(neural_net.parameters())
+        # opt = torch.optim.Adam(neural_net.parameters())
         
         for _ in range(num_train_epochs):
             for example in examples:
                 s = example[0]
-                nn_policy, nn_value = neural_net(state_to_nn_input(s), torch.Tensor(self.target_seq))
+                nn_policy, nn_value = self.nn(state_to_nn_input(s), torch.Tensor(self.target_seq))
                 mcts_value = example[2]
                 mcts_policy = example[1] #[self.mcts.Nsa[(s,a)] if (s,a) in self.mcts.Nsa else 0 for a in range(self.vocab_size)]
                 
@@ -516,11 +513,12 @@ class MCTSTrainer():
                 loss = loss_fn(nn_value, nn_policy, mcts_value, mcts_policy)
                 #print('loss is', loss)
                 
-                opt.zero_grad()
+                self.opt.zero_grad()
                 loss.backward()
-                opt.step()
-        
-        return neural_net
+                self.opt.step()
+                if self.scheduler is not None:
+                    self.scheduler.step()
+
     
     def augmentExamples(self, examples):
         '''
@@ -535,8 +533,10 @@ class MCTSTrainer():
             
             if len(terms) > 1:
                 terms = terms[1:]
-                random.shuffle(terms)
-                new_examples.append(['<ROOT>|'+'|'.join(terms), e[1], e[2]])
+
+                for _ in range(len(terms)):
+                    random.shuffle(terms)
+                    new_examples.append(['<ROOT>|'+'|'.join(terms), e[1], e[2]])
                 
         return new_examples
             
@@ -562,9 +562,6 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
     best_state = None
 
     for _ in range(LEVELS+1):
-        if temp_s.endswith('<EOS>'):
-            break
-
         print('Proposal:', temp_s)
         rmse = eval_expression_rmse(sequence, temp_s)
         print('Is it correct? Loss =', rmse)
@@ -584,6 +581,9 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
         print('-'*60)
         #temp_probs = coach.mcts.getValidMoves(temp_s)*temp_probs.detach().numpy()
         temp_s += '|'+id_to_term_str[int(reward_list.argmax())]
+
+        if temp_s.endswith('<EOS>') or minimum_rmse == 0:
+            break
 
     print('Proposal:', temp_s)
     temp_probs, temp_reward = neural_network(state_to_nn_input(temp_s), torch.Tensor(sequence))
@@ -668,36 +668,11 @@ if __name__ == '__main__':
     print('Number of terms in ground-truth expression =', nterms)
 
     '''
-    np.random.seed(590)
-    random.seed(590)
-    data = make_n_random_functions(
-        n=1000,
-        sequence_bound=1000,
-        nterms=nterms,
-        coefficient_range=(-5, 5),
-        initial_terms_range=(1, 3)
-    )
-
-    random.shuffle(data)
-    N_train = int(0.8*len(data))
-    train_data, test_data = data[:N_train], data[N_train:]
-    '''
-
-    '''
     with open(f'mcts_train_data_{nterms}terms.pkl', 'wb') as f:
         pickle.dump(train_data, f)
     
     with open(f'mcts_test_data_{nterms}terms.pkl', 'wb') as f:
         pickle.dump(test_data, f)
-    '''
-
-    '''
-    # Load previously generated data
-    with open(f'mcts_train_data_{nterms}terms.pkl', 'rb') as f:
-        train_data = pickle.load(f)
-    
-    with open(f'mcts_test_data_{nterms}terms.pkl', 'rb') as f:
-        test_data = pickle.load(f)
     '''
 
     # load data
@@ -736,10 +711,15 @@ if __name__ == '__main__':
         model = MCTS_MLP(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
     elif model_type == 'GRU':
         model = MCTS_GRU(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
-    elif model_type == 'Transformer':
-        model = MCTS_Transformer()
+    elif model_type == 'TFR':
+        model = MCTS_Transformer(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
     else:
         raise NotImplementedError(f'unrecognized model type {model_type}')
+    print(model)
+
+    opt = torch.optim.Adam(model.parameters())
+    scheduler = None
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=20)
 
     # MCTS trainer args
     numIters = 3
@@ -753,10 +733,10 @@ if __name__ == '__main__':
     all_examples = []
 
     # Training
-    for i, seq in enumerate(train_sequence_list):
+    for i, seq in enumerate(train_sequence_list[:20]):
         print("Sequence", i)
         print("Sequence is:", seq)
-        trainer = MCTSTrainer(seq, TERM_TYPES, numIters, numEpisodes, mcts_args, neural_network=model)
+        trainer = MCTSTrainer(seq, TERM_TYPES, numIters, numEpisodes, mcts_args, opt, scheduler=scheduler, neural_network=model)
         if use_hint:
             ground_truth_terms = np.array(train_data[i][1])
             hint_term_id = np.random.choice(len(POSSIBLE_TERMS), p=ground_truth_terms/ground_truth_terms.sum())
@@ -769,6 +749,8 @@ if __name__ == '__main__':
         model = trainer.nn
 
     print("Number of training examples collected =", len(all_examples))
+    if scheduler is not None:
+        print("Final learning rate is", scheduler.get_lr())
     #with open('mcts_training_examples.pkl', 'wb') as f:
     #    pickle.dump(all_examples, f)
 
