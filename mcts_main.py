@@ -733,7 +733,7 @@ if __name__ == '__main__':
     all_examples = []
 
     # Training
-    for i, seq in enumerate(train_sequence_list[:20]):
+    for i, seq in enumerate(train_sequence_list):
         print("Sequence", i)
         print("Sequence is:", seq)
         trainer = MCTSTrainer(seq, TERM_TYPES, numIters, numEpisodes, mcts_args, opt, scheduler=scheduler, neural_network=model)
