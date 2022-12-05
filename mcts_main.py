@@ -2,6 +2,7 @@ from function import FunctionTerm, Function
 from mcts_networks import *
 import numpy as np
 import torch
+from torch.utils.data import DataLoader, Dataset
 
 import math
 import random
@@ -11,8 +12,12 @@ import argparse
 import string
 import os
 import pandas as pd
+from collections import defaultdict
 
 
+BATCH_SIZE = 256
+cuda_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+cpu_device = torch.device("cpu")
 
 LEVELS = 4
 
@@ -63,7 +68,7 @@ TERM_TYPES = len(id_to_term_str)
 
 def state_to_nn_input(s):
     terms_str = s.split('|')
-    return torch.LongTensor([[term_str_to_id[t] for t in terms_str if t in term_str_to_id]])
+    return torch.LongTensor([term_str_to_id[t] for t in terms_str if t in term_str_to_id])
 
 def grid_search(sequence, terms, upper_bound = 5, lower_bound = -5):
     # sequence: target sequence
@@ -220,7 +225,7 @@ class MCTS():
         if s not in self.Ps:
             # leaf node
             
-            states = state_to_nn_input(s)
+            states = state_to_nn_input(s).reshape(1,-1)
             policy_estimate, v = self.nn(states, torch.Tensor(self.target_seq))
             self.Ps[s] = policy_estimate.detach().squeeze().numpy()
             v = float(v.detach())
@@ -328,7 +333,7 @@ class MCTS():
                 elif beta[i] < self.coeff_lower_bound:
                     beta[i] = self.coeff_lower_bound
                 
-            penalty = np.sum((y - X.dot(beta))**2)
+            penalty = np.sqrt(np.sum((y - X.dot(beta))**2))
         
         else:
             penalty = grid_search(self.target_seq, terms, upper_bound=self.coeff_upper_bound, 
@@ -344,8 +349,8 @@ class MCTS():
 
 class MCTSTrainer():
 
-    def __init__(self, target_seq, vocab_size, numIters, numEpisodes, mcts_args, opt, scheduler=None,
-                 nn_args=None, neural_network=None, max_length=LEVELS, 
+    def __init__(self, target_seq, vocab_size, numIters, numEpisodes, mcts_args, opt=None, scheduler=None,
+                 nn_args=None, neural_network=None, train_nn=True, max_length=LEVELS, 
                  coeff_upper_bound=5, coeff_lower_bound=-5):
         
         if not nn_args and not neural_network:
@@ -365,6 +370,8 @@ class MCTSTrainer():
         if not neural_network:
             self.nn = MCTS_GRU(vocab_size, nn_args['embed_size'], nn_args['hidden_size'], 
                                nn_args['num_layers'], len(target_seq), nn_args['embedding_weights'])
+
+        self.train_nn = train_nn
             
         self.opt = opt
         self.scheduler = scheduler
@@ -425,7 +432,6 @@ class MCTSTrainer():
             self.mcts.getActionProb(s)
             
             # get MCTS policy at state s
-            print('Getting MCTS policy for current episode...')
             policy = self.mcts.getPolicy(s)
             
             # find next move and append to s 
@@ -476,8 +482,9 @@ class MCTSTrainer():
             examples += self.augmentExamples(examples)
             self.examples += examples
             
-            print('Training neural network...')
-            self.trainNN(examples, num_train_epochs)
+            if self.train_nn:
+                print('Training neural network...')
+                self.trainNN(examples, num_train_epochs)
             
             
             # if trained neural networks are better than old neural network, then replace old neural network
@@ -498,26 +505,37 @@ class MCTSTrainer():
         # opt = torch.optim.Adam(neural_net.parameters())
         
         for _ in range(num_train_epochs):
+            avg_loss = 0
             for example in examples:
                 s = example[0]
-                nn_policy, nn_value = self.nn(state_to_nn_input(s), torch.Tensor(self.target_seq))
+                nn_policy, nn_value = self.nn(state_to_nn_input(s).reshape(1,-1), torch.Tensor(self.target_seq))
                 mcts_value = example[2]
                 mcts_policy = example[1] #[self.mcts.Nsa[(s,a)] if (s,a) in self.mcts.Nsa else 0 for a in range(self.vocab_size)]
                 
                 if sum(mcts_policy) == 0:  # handle the case where no key (s,a) exists in self.mcts.Nsa
                     continue
                 
-                mcts_policy = torch.Tensor(mcts_policy)/(sum(mcts_policy))  # TODO: make this right
+                mcts_policy = torch.Tensor(mcts_policy)/(sum(mcts_policy)+1e-7)  # TODO: make this right
                 mcts_policy = mcts_policy.reshape(1,-1)
                 
                 loss = loss_fn(nn_value, nn_policy, mcts_value, mcts_policy)
-                #print('loss is', loss)
+                avg_loss += loss.item()
+                if loss.isnan().any():
+                    print('ERROR! Loss is nan! \n')
+                    print(example)
+                    print(mcts_policy)
+                    print(mcts_value)
+                    print(nn_policy)
+                    print(nn_value)
+                    raise Exception('ERROR! Loss is nan! \n')
                 
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
                 if self.scheduler is not None:
                     self.scheduler.step()
+            
+            print('Training loss =', avg_loss/(len(examples)+1e-7))
 
     
     def augmentExamples(self, examples):
@@ -543,6 +561,82 @@ class MCTSTrainer():
         
     def getActualReward(self, s):
         return self.mcts.getReward(s)
+
+
+class MCTSDataset(torch.utils.data.Dataset):
+    def __init__(self, training_examples):
+        # each example in training_examples has the format [sequence (list or np.ndarray), node (str), MCTS policy]
+        self.data = [
+            {
+            'seq': torch.Tensor(e[0]), 
+            'node': state_to_nn_input(e[1]),
+            'policy': torch.Tensor(e[2]),
+            'reward': torch.Tensor([e[3]])
+            } 
+            for e in training_examples
+        ]
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+
+class ByLengthSampler(torch.utils.data.BatchSampler):
+    """
+    Allows for sampling minibatches of examples all of the same sequence length;
+    adapted from https://discuss.pytorch.org/t/tensorflow-esque-bucket-by-sequence-length/41284/13.
+    """
+    def __init__(self, dataset, key, batchsize, shuffle=True, drop_last=False):
+        # import ipdb
+        # ipdb.set_trace()
+        self.batchsize = batchsize
+        self.shuffle = shuffle
+        self.drop_last = drop_last
+        self.seqlens = torch.LongTensor([example[key].size(-1) for example in dataset])
+        self.nbatches = len(self._generate_batches())
+
+    def _generate_batches(self):
+        # shuffle examples
+        seqlens = self.seqlens
+        perm = torch.randperm(seqlens.size(0)) if self.shuffle else torch.arange(seqlens.size(0))
+        batches = []
+        len2batch = defaultdict(list)
+        for i, seqidx in enumerate(perm):
+            seqlen, seqidx = seqlens[seqidx].item(), seqidx.item()
+            len2batch[seqlen].append(seqidx)
+            if len(len2batch[seqlen]) >= self.batchsize:
+                batches.append(len2batch[seqlen][:])
+                del len2batch[seqlen]
+                
+        # add any remaining batches
+        if not self.drop_last:
+            for length, batchlist in len2batch.items():
+                if len(batchlist) > 0:
+                    batches.append(batchlist)
+        # shuffle again so we don't always start w/ the most common sizes
+        batchperm = torch.randperm(len(batches)) if self.shuffle else torch.arange(len(batches))
+        return [batches[idx] for idx in batchperm]
+
+    def batch_count(self):
+        return self.nbatches
+
+    def __len__(self):
+        return len(self.seqlens)
+
+    def __iter__(self):
+        batches = self._generate_batches()
+        for batch in batches:
+            yield batch
+
+def collate(batchdictseq):
+    batch_seqs = torch.stack([batchdictseq[i]['seq'] for i in range(len(batchdictseq))])
+    batch_nodes = torch.stack([batchdictseq[i]['node'] for i in range(len(batchdictseq))])
+    batch_policys = torch.stack([batchdictseq[i]['policy'] for i in range(len(batchdictseq))])
+    batch_rewards = torch.stack([batchdictseq[i]['reward'] for i in range(len(batchdictseq))])
+    
+    return batch_seqs, batch_nodes, batch_policys, batch_rewards
 
 
 def eval_expression_rmse(sequence, expression):
@@ -574,7 +668,7 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
         valids = helper_mcts.getValidMoves(temp_s)
         for a in range(TERM_TYPES):
             if valids[a]:
-                temp_prob, temp_reward = neural_network(state_to_nn_input(temp_s+'|'+id_to_term_str[a]), torch.Tensor(sequence))
+                temp_prob, temp_reward = neural_network(state_to_nn_input(temp_s+'|'+id_to_term_str[a]).reshape(1,-1), torch.Tensor(sequence))
                 reward_list[a] = temp_reward
 
         print('Reward:', temp_reward)
@@ -586,7 +680,7 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
             break
 
     print('Proposal:', temp_s)
-    temp_probs, temp_reward = neural_network(state_to_nn_input(temp_s), torch.Tensor(sequence))
+    temp_probs, temp_reward = neural_network(state_to_nn_input(temp_s).reshape(1,-1), torch.Tensor(sequence))
     print('Reward:', temp_reward)
     print('Is it correct? Loss =', eval_expression_rmse(sequence, temp_s))
     print('-'*60)
@@ -594,34 +688,37 @@ def eval_nn(sequence, neural_network, root='<ROOT>'):
     return minimum_rmse, best_state
 
 
-def save_results(tag, avg_rmse, correct_count, term_types, nterms, model_type, use_hint, nn_args, 
-                numMCTSSims, depth_limit, mcts_cpuct, iters, episodes, reward):
-    if os.path.isfile('mcts_experiment_results.csv'):
-        df = pd.read_csv('mcts_experiment_results.csv', index_col=0)
+def save_results(csv_name, tag, avg_rmse, correct_count, term_types, nterms, model_type, use_hint, nn_args, 
+                numMCTSSims, depth_limit, mcts_cpuct, iters, episodes, reward, epochs, outer_iters=None):
+    if os.path.isfile(csv_name):
+        df = pd.read_csv(csv_name, index_col=0)
     else:
         df = pd.DataFrame(
-                columns=['tag', 'avg_rmse', 'correct_count', 'term_types', 'nterms', 'model', 'nn_hyperparams', 'use_hint', 'numMCTSSims', 'depth_limit', 'mcts_cpuct', 'iters', 'episodes', 'reward']
+                columns=['tag', 'term_types', 'nterms', 'avg_rmse', 'correct_count', 'model', 'nn_hyperparams', 'epochs', 'outer_iters',
+                'use_hint', 'numMCTSSims', 'depth_limit', 'mcts_cpuct', 'mcts_iters', 'mcts_episodes', 'reward']
             )
     
     new_df = {
         'tag': tag,
-        'avg_rmse': avg_rmse, 
-        'correct_count': correct_count,
         'term_types': term_types, 
         'nterms': nterms, 
+        'avg_rmse': avg_rmse, 
+        'correct_count': correct_count,
         'model': model_type, 
         'nn_hyperparams': str(nn_args), 
+        'epochs': epochs, 
+        'outer_iters': outer_iters,
         'use_hint': use_hint, 
         'numMCTSSims': numMCTSSims, 
         'depth_limit': depth_limit, 
         'mcts_cpuct': mcts_cpuct,
-        'iters': iters, 
+        'mcts_iters': iters, 
         'episodes': episodes, 
         'reward': reward
     }
 
     df = df.append(new_df, ignore_index = True)
-    df.to_csv('mcts_experiment_results.csv')
+    df.to_csv(csv_name)
     
 
 def load_data(nterms, train_data=True):
@@ -654,6 +751,7 @@ if __name__ == '__main__':
     parser.add_argument('--mctssims', type=int, help='number of MCTS Simulations to run to get action probability', default=1000)
     parser.add_argument('--model_type', type=str, help='model type, MLP or GRU', default="MLP")
     parser.add_argument('--hint', type=bool, help='whether to use hint to help guide MCTS', default=False)
+    parser.add_argument('--collect_first', type=bool, help='whether to collect all training examples first', default=False)
 
     input_args = parser.parse_args()
 
@@ -679,8 +777,8 @@ if __name__ == '__main__':
     train_data = load_data(nterms, train_data=True)
     test_data = load_data(nterms, train_data=False)
 
-    train_sequence_list = [d[0] for d in train_data]
-    test_sequence_list = [d[0] for d in test_data]
+    train_sequence_list = [d[0] for d in train_data][:10]   # check this every time 
+    test_sequence_list = [d[0] for d in test_data][:10]
     sequence_length = len(train_sequence_list[0])
     
 
@@ -700,26 +798,24 @@ if __name__ == '__main__':
     # neural network args
     model_type = input_args.model_type
     nn_args = {
-        'embed_size': 20,
-        'hidden_size': 40,
-        'num_layers': 3
+        'embed_size': 64,
+        'hidden_size': 64,
+        'num_layers': 4,
+        'encoder_attn': True
     }
     print('Neural Network parameters:')
     print(f"architecture={model_type}, embed_size={nn_args['embed_size']}, hidden_size={nn_args['hidden_size']}, num_layers={nn_args['num_layers']}")
+    print(nn_args)
     print('')
     if model_type == 'MLP':
-        model = MCTS_MLP(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
+        model = MCTS_MLP(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length, encoder_attn=nn_args['encoder_attn'])
     elif model_type == 'GRU':
-        model = MCTS_GRU(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
+        model = MCTS_GRU(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length, encoder_attn=nn_args['encoder_attn'])
     elif model_type == 'TFR':
         model = MCTS_Transformer(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
     else:
         raise NotImplementedError(f'unrecognized model type {model_type}')
     print(model)
-
-    opt = torch.optim.Adam(model.parameters())
-    scheduler = None
-    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=20)
 
     # MCTS trainer args
     numIters = 3
@@ -730,40 +826,153 @@ if __name__ == '__main__':
     print('Using hint?', use_hint)
 
     print('='*30 + 'Training begins now' + '='*30)
-    all_examples = []
 
     # Training
-    for i, seq in enumerate(train_sequence_list):
-        print("Sequence", i)
-        print("Sequence is:", seq)
-        trainer = MCTSTrainer(seq, TERM_TYPES, numIters, numEpisodes, mcts_args, opt, scheduler=scheduler, neural_network=model)
-        if use_hint:
-            ground_truth_terms = np.array(train_data[i][1])
-            hint_term_id = np.random.choice(len(POSSIBLE_TERMS), p=ground_truth_terms/ground_truth_terms.sum())
-            print(f'Hinting MCTS to search node "<ROOT>|{id_to_term_str[hint_term_id]}"')
-            trainer.executeEpisode(root='<ROOT>|'+id_to_term_str[hint_term_id])
-        
-        trainer.learn(reward=reward, num_train_epochs=1)
-        for e in trainer.examples:
-            all_examples.append([seq]+e)
-        model = trainer.nn
+    collect_first = input_args.collect_first
+    epochs = 20
+    outer_iters = 5
+    learning_rate_init = 5*1e-5
+    print('Initial learning rate =', learning_rate_init)
 
-    print("Number of training examples collected =", len(all_examples))
+    opt = torch.optim.Adam(model.parameters(), lr=learning_rate_init)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=10)
+
+    if collect_first:
+        print('Collect examples first and train later')
+        print('Number of outer iterations =', outer_iters)
+        print('Number of training epochs per outer iteration =', epochs)
+
+        temp_filename = f'mcts_model_temporary_{rand_tag}.pt'
+        best_valid_loss = float('inf')
+
+        mse_loss = torch.nn.MSELoss()
+        ce_loss = torch.nn.CrossEntropyLoss()
+        def loss_fn(nn_reward, nn_policy, mcts_reward, mcts_policy):
+            return mse_loss(nn_reward, mcts_reward) + ce_loss(nn_policy, mcts_policy)
+
+        for iter in range(outer_iters):
+            print('Outer Iter', iter+1)
+            all_examples = []
+
+            # collect examples first
+            model.eval()
+            model = model.to(cpu_device)
+            for i, seq in enumerate(train_sequence_list):
+                print("Sequence", i)
+                print("Sequence is:", seq)
+                # TODO: modify MCTSTrainer to include train_model = True/False option
+                trainer = MCTSTrainer(seq, TERM_TYPES, numIters, numEpisodes, mcts_args, neural_network=model, train_nn=False)
+                if use_hint:
+                    ground_truth_terms = np.array(train_data[i][1])
+                    hint_term_id = np.random.choice(len(POSSIBLE_TERMS), p=ground_truth_terms/ground_truth_terms.sum())
+                    print(f'Hinting MCTS to search node "<ROOT>|{id_to_term_str[hint_term_id]}"')
+                    trainer.executeEpisode(root='<ROOT>|'+id_to_term_str[hint_term_id])
+                
+                trainer.learn(reward=reward)
+                for e in trainer.examples:
+                    all_examples.append([seq]+e)
+
+            # train model
+            random.shuffle(all_examples)
+            train_dataset = MCTSDataset(all_examples[:int(len(all_examples)*0.9)])
+            train_loader = DataLoader(train_dataset,
+                            batch_sampler=ByLengthSampler(train_dataset, key='node', batchsize=BATCH_SIZE, shuffle=True), 
+                            collate_fn=collate, num_workers=2)
+            
+            valid_dataset = MCTSDataset(all_examples[int(len(all_examples)*0.9):])
+            valid_loader = DataLoader(valid_dataset,
+                            batch_sampler=ByLengthSampler(valid_dataset, key='node', batchsize=BATCH_SIZE, shuffle=True), 
+                            collate_fn=collate, num_workers=2)
+
+            model = model.to(cuda_device)
+
+            for i in range(epochs):
+                # train step
+                model.train()
+                total_train_loss = 0
+                train_count = 0
+                for X_seq, X_node, y_policy, y_reward in train_loader:
+                    opt.zero_grad()
+
+                    pred_policy, pred_reward = model(X_node.to(cuda_device), X_seq.to(cuda_device))
+                    loss = loss_fn(pred_reward, pred_policy, y_reward.to(cuda_device), y_policy.to(cuda_device))
+
+                    total_train_loss += loss.item()
+                    train_count += len(X_seq)
+
+                    loss.backward()
+                    opt.step()
+                
+                # valid step
+                model.eval()
+                total_valid_loss = 0
+                valid_count = 0
+                with torch.no_grad():
+                    for X_seq, X_node, y_policy, y_reward in valid_loader:
+                        pred_policy, pred_reward = model(X_node.to(cuda_device), X_seq.to(cuda_device))
+                        curr_valid_loss = loss_fn(pred_reward, pred_policy, y_reward.to(cuda_device), y_policy.to(cuda_device))
+
+                        total_valid_loss += curr_valid_loss.item()
+                        valid_count += len(X_seq)
+                
+                epoch_train_loss = total_train_loss/(1e-7 + train_count)
+                epoch_valid_loss = total_valid_loss/(1e-7 + valid_count)
+
+                if scheduler is not None:
+                    scheduler.step(epoch_valid_loss)
+                
+                print(f'Epoch {i+1}: training Loss = {epoch_train_loss}, validation loss = {epoch_valid_loss}') 
+
+                if (epoch_valid_loss < best_valid_loss):
+                    print('DEBUG HELP: is this called?')
+                    best_valid_loss = epoch_valid_loss
+                    ## Save the current model
+                    torch.save(model, temp_filename)
+            
+        # load the best model during training
+        model = torch.load(temp_filename)
+        os.remove(temp_filename)
+
+    else:
+        print('Collect examples and train simultaneously')
+        all_examples = []
+        for i, seq in enumerate(train_sequence_list):
+            print("Sequence", i)
+            print("Sequence is:", seq)
+            trainer = MCTSTrainer(seq, TERM_TYPES, numIters, numEpisodes, mcts_args, opt=opt, scheduler=scheduler, neural_network=model, 
+                                train_nn=True)
+            if use_hint:
+                ground_truth_terms = np.array(train_data[i][1])
+                hint_term_id = np.random.choice(len(POSSIBLE_TERMS), p=ground_truth_terms/ground_truth_terms.sum())
+                print(f'Hinting MCTS to search node "<ROOT>|{id_to_term_str[hint_term_id]}"')
+                trainer.executeEpisode(root='<ROOT>|'+id_to_term_str[hint_term_id])
+            
+            trainer.learn(reward=reward, num_train_epochs=1)
+            for e in trainer.examples:
+                all_examples.append([seq]+e)
+            model = trainer.nn
+
+        print("Number of training examples collected =", len(all_examples))
+
     if scheduler is not None:
-        print("Final learning rate is", scheduler.get_lr())
+        print("Final learning rate is", opt.param_groups[0]['lr'])
     #with open('mcts_training_examples.pkl', 'wb') as f:
     #    pickle.dump(all_examples, f)
 
     # Save model
-    torch.save(model, f'mcts_models/mcts_model_{rand_tag}.pt')
+    #torch.save(model, f'mcts_models/mcts_model_{rand_tag}.pt')
 
+    # Evaluation
     print('='*30 + 'Evaluation begins now' + '='*30)
+    model.eval()
+    model.to(cpu_device)
+
     rmse_list = []
     best_state_list = []
     perfect_counts = 0
-    # Evaluation
+
     for seq in test_sequence_list:
-        rmse, best_state = eval_nn(seq, trainer.nn)
+        rmse, best_state = eval_nn(seq, model)
         rmse_list.append(rmse)
         best_state_list.append(best_state)
         if rmse == 0:
@@ -774,8 +983,10 @@ if __name__ == '__main__':
     print('Number of perfectly solved examples:', perfect_counts)
 
     # save experiment run results to csv file
-    save_results(rand_tag, avg_rmse, perfect_counts, TERM_TYPES, nterms, model_type, use_hint, nn_args, 
-                mcts_args['numMCTSSims'], mcts_args['maxTreeLevel'], mcts_args['cpuct'], numIters, numEpisodes, reward)
+    #csv_filename = 'mcts_experiment_results_new.csv'
+    #save_results(csv_filename, rand_tag, avg_rmse, perfect_counts, TERM_TYPES, nterms, model_type, use_hint, nn_args, 
+     #           mcts_args['numMCTSSims'], mcts_args['maxTreeLevel'], mcts_args['cpuct'], numIters, numEpisodes, reward, epochs, outer_iters)
+    
     
 
     

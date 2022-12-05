@@ -27,25 +27,24 @@ class SequenceEncoder(torch.nn.Module):
         # x is of shape (batch_size, input_length)
         # returns a tensor of shape (batch_size, input_length-self.window_size+1, self.window_size*2)
 
-        x = x.unfold(0,self.window_size,1) # x has shape (batch_size, input_length-self.window_size+1, self.window_size)
-        log_x = self.safe_log(x.abs())
+        output = x.unfold(-1,self.window_size,1) # x has shape (batch_size, input_length-self.window_size+1, self.window_size)
+        log_x = self.safe_log(output.abs(), eps=1e-3)
 
         # normalize within each window
-        m = x.mean(-1, keepdim=True)
-        s = x.std(-1, unbiased=False, keepdim=True) + eps
-        x -= m
-        x /= s
+        '''
+        m = output.mean(-1, keepdim=True)
+        s = output.std(-1, unbiased=False, keepdim=True) + eps
+        output -= m
+        output /= s
+        '''
+        output = F.normalize(output, p=2, dim=-1)
         
-        x = torch.cat([x, log_x], dim=1)
-        return x
+        output = torch.cat([output, log_x], dim=-1)
+        return output
 
     def normalize(self, x, eps=1e-7):
         # x has shape (batch_size, )
-        m = x.mean(0, keepdim=True)
-        s = x.std(0, unbiased=False, keepdim=True) + eps
-        x -= m
-        x /= s
-        return x
+        return F.normalize(x, p=2, dim=-1)
 
     def safe_log(self, x, eps=1e-7):
         # so that log doesn't go to 0 when applied twice
@@ -53,33 +52,37 @@ class SequenceEncoder(torch.nn.Module):
         x = torch.log(x + eps)
         return x
 
-    def forward(self, x):
+    def forward(self, seq):
         # Concatenate x with log(x)
+        if len(seq.shape) != 2:
+            seq = seq.reshape(-1,self.input_length)
+        
         if self.use_attention:
-            x = self.sliding_window(x)
-            x = self.linear(x)
-            x = x.unsqueeze(0)
-            x = self.transformer_encoder(x)
-            x = x.mean(1)
-            return self.mlp(x)
+            augmented_tensor = self.sliding_window(seq)
+            augmented_tensor = self.linear(augmented_tensor)
+            augmented_tensor = self.transformer_encoder(augmented_tensor)
+            augmented_tensor = augmented_tensor.mean(1)
+            return self.mlp(augmented_tensor)
             
         else: 
-            augmented_tensor = x.repeat((1, 2)) # x is of shape [batch_size, input_length]
-
-            augmented_tensor[:, 0 : self.input_length] = self.normalize(x)
-            augmented_tensor[:, self.input_length : self.input_length * 2] = self.safe_log(x.abs())
+            augmented_tensor = seq.repeat((1, 2)) # x is of shape [batch_size, input_length]
+            
+            augmented_tensor[:, 0 : self.input_length] = self.normalize(seq)
+            augmented_tensor[:, self.input_length : self.input_length * 2] = self.safe_log(seq.abs())
             augmented_tensor = self.mlp(augmented_tensor)
-
             return augmented_tensor
         
-    def forward_output_all(self, x):
+    def forward_output_all(self, seq):
         if not self.use_attention:
             raise Exception('Only call this function if using attention in encoder')
-        x = self.sliding_window(x)
-        x = self.linear(x)
-        x = x.unsqueeze(0)
-        x = self.transformer_encoder(x)
-        return x
+        
+        if len(seq.shape) != 2:
+            seq = seq.reshape(-1,self.input_length)
+        
+        augmented_tensor = self.sliding_window(seq)
+        augmented_tensor = self.linear(augmented_tensor)
+        augmented_tensor = self.transformer_encoder(augmented_tensor)
+        return augmented_tensor
 
 class MCTS_MLP(torch.nn.Module):
     def __init__(self, vocab_size, embed_size, hidden_size, num_layers, input_seq_size, embedding_weights=None, encoder_attn=False):
@@ -117,12 +120,15 @@ class MCTS_MLP(torch.nn.Module):
     def forward(self, x, seq):
         # x: index of function terms
         # seq: target sequence
+
+        if len(x.shape) == 1:
+            x = x.reshape(1, -1)
         
         assert seq.shape[-1] == self.input_seq_size, f'Input sequence length is invalid! Expected{self.input_seq_size}, got {seq.shape[-1]}.'
         
         encoded_seq = self.seq_encoder(seq)
-        if encoded_seq.shape != (1,self.embed_size):
-            encoded_seq = encoded_seq.reshape(1,self.embed_size)
+        if len(encoded_seq.shape) != 2:
+            encoded_seq = encoded_seq.reshape(-1, self.embed_size)
         
         terms_embedding = self.embedder(x).mean(dim=1)
         
@@ -162,14 +168,17 @@ class MCTS_GRU(torch.nn.Module):
     def forward(self, x, seq):
         # x: index of function terms
         # seq: target sequence
-        
+
+        if len(x.shape) == 1:
+            x = x.reshape(1, -1)
+
         assert seq.shape[-1] == self.input_seq_size, f'Input sequence length is invalid! Expected{self.input_seq_size}, got {seq.shape[-1]}.'
         
         encoded_seq = self.seq_encoder(seq)
-        if encoded_seq.shape != (1,1,self.embed_size):
-            encoded_seq = encoded_seq.reshape(1,1,self.embed_size)
+        if len(encoded_seq.shape) != 3:
+            encoded_seq = encoded_seq.reshape(-1,1,self.embed_size)
         
-        gru_input = torch.cat([encoded_seq, self.embedder(x)], dim=1)
+        gru_input = torch.cat([encoded_seq, self.embedder(x)], dim=1) # both term should have shape (batch_size, X, hidden_size)
         gru_output = self.gru(gru_input)[1][-1]
         return self.softmax(self.choice_head(gru_output)), self.value_head(gru_output)
 
@@ -206,6 +215,8 @@ class MCTS_Transformer(torch.nn.Module):
 
 
     def forward(self, x, seq):
+        if len(x.shape) == 1:
+            x = x.reshape(1, -1)
         encoded_tokens = self.seq_encoder.forward_output_all(seq)
         tgt = self.linear(self.embedder(x))
         output = self.decoder(tgt, encoded_tokens).mean(1)
