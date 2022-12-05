@@ -713,7 +713,7 @@ def save_results(csv_name, tag, avg_rmse, correct_count, term_types, nterms, mod
         'depth_limit': depth_limit, 
         'mcts_cpuct': mcts_cpuct,
         'mcts_iters': iters, 
-        'episodes': episodes, 
+        'mcts_episodes': episodes, 
         'reward': reward
     }
 
@@ -777,8 +777,8 @@ if __name__ == '__main__':
     train_data = load_data(nterms, train_data=True)
     test_data = load_data(nterms, train_data=False)
 
-    train_sequence_list = [d[0] for d in train_data][:10]   # check this every time 
-    test_sequence_list = [d[0] for d in test_data][:10]
+    train_sequence_list = [d[0] for d in train_data]   # check this every time 
+    test_sequence_list = [d[0] for d in test_data]
     sequence_length = len(train_sequence_list[0])
     
 
@@ -924,7 +924,6 @@ if __name__ == '__main__':
                 print(f'Epoch {i+1}: training Loss = {epoch_train_loss}, validation loss = {epoch_valid_loss}') 
 
                 if (epoch_valid_loss < best_valid_loss):
-                    print('DEBUG HELP: is this called?')
                     best_valid_loss = epoch_valid_loss
                     ## Save the current model
                     torch.save(model, temp_filename)
@@ -983,9 +982,9 @@ if __name__ == '__main__':
     print('Number of perfectly solved examples:', perfect_counts)
 
     # save experiment run results to csv file
-    #csv_filename = 'mcts_experiment_results_new.csv'
-    #save_results(csv_filename, rand_tag, avg_rmse, perfect_counts, TERM_TYPES, nterms, model_type, use_hint, nn_args, 
-     #           mcts_args['numMCTSSims'], mcts_args['maxTreeLevel'], mcts_args['cpuct'], numIters, numEpisodes, reward, epochs, outer_iters)
+    csv_filename = 'mcts_experiment_results_new.csv'
+    save_results(csv_filename, rand_tag, avg_rmse, perfect_counts, TERM_TYPES, nterms, model_type, use_hint, nn_args, 
+                mcts_args['numMCTSSims'], mcts_args['maxTreeLevel'], mcts_args['cpuct'], numIters, numEpisodes, reward, epochs, outer_iters)
     
     
 
