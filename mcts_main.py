@@ -479,6 +479,10 @@ class MCTSTrainer():
             random_nodes = random.sample(list(self.mcts.Ns.keys()), min(10, len(self.mcts.Ns)))
             examples += [[node, self.mcts.getPolicy(node), self.mcts.search(node)] for node in random_nodes]
             
+            # sample intermediate nodes with <EOS> token appended
+            examples += [[e[0]+'|<EOS>', np.zeros(self.vocab_size), self.getActualReward(e[0]+'|<EOS>')] for e in examples if e[-5:]!='<EOS>']
+            
+            # sample node permutations
             examples += self.augmentExamples(examples)
             self.examples += examples
             
@@ -639,6 +643,30 @@ def collate(batchdictseq):
     return batch_seqs, batch_nodes, batch_policys, batch_rewards
 
 
+def filter_mcts_examples(examples, filter_eos_ratio=0.1):
+    ret = []
+    eos_examples = []
+    positive_count = 0
+    negative_eos_count = 0
+    for e in examples:
+        if e[3] > 0:
+            positive_count += 1
+        if e[3] < 0 and e[1][-5:] == '<EOS>':
+            negative_eos_count += 1
+        if e[1][-5:] == '<EOS>' and e[3] > 0:
+            eos_examples.append(e)
+            continue
+        ret.append(e)
+    
+    print(f'Number of positive examples = {positive_count}, Number of negative examples = {len(examples) - positive_count}')
+    print(f'Number of positive EOS examples = {len(eos_examples)}, Number of negative EOS examples = {negative_eos_count}')
+
+    random.shuffle(eos_examples)
+    eos_retain = int(len(eos_examples) * filter_eos_ratio)
+    print(f'Filtered out {len(eos_examples) - eos_retain} examples ending with <EOS> tokens')
+    return ret + eos_examples[:eos_retain]
+
+
 def eval_expression_rmse(sequence, expression):
     candidates = []
     for t in expression.split('|'):
@@ -749,9 +777,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--nterms', type=int, help='number of terms in ground-truth function', default=2)
     parser.add_argument('--mctssims', type=int, help='number of MCTS Simulations to run to get action probability', default=1000)
-    parser.add_argument('--model_type', type=str, help='model type, MLP or GRU', default="MLP")
+    parser.add_argument('--model_type', type=str, help='model type, MLP or GRU or TFR', default="MLP")
+    parser.add_argument('--outer_iters', type=int, help='Number of outer iterations', default=5)
+    parser.add_argument('--dim', type=int, help='neural network hidden dimension and attention dimension', default=256)
     parser.add_argument('--hint', type=bool, help='whether to use hint to help guide MCTS', default=False)
     parser.add_argument('--collect_first', type=bool, help='whether to collect all training examples first', default=False)
+    parser.add_argument('--test_code', type=bool, help='testing', default=False)
 
     input_args = parser.parse_args()
 
@@ -777,8 +808,14 @@ if __name__ == '__main__':
     train_data = load_data(nterms, train_data=True)
     test_data = load_data(nterms, train_data=False)
 
-    train_sequence_list = [d[0] for d in train_data]   # check this every time 
+    train_sequence_list = [d[0] for d in train_data] 
     test_sequence_list = [d[0] for d in test_data]
+    
+    if input_args.test_code:
+        print('THIS IS A TEST RUN, RESULTS WILL NOT BE SAVED')
+        train_sequence_list = train_sequence_list[:10]
+        test_sequence_list = test_sequence_list[:10]
+
     sequence_length = len(train_sequence_list[0])
     
 
@@ -798,21 +835,35 @@ if __name__ == '__main__':
     # neural network args
     model_type = input_args.model_type
     nn_args = {
-        'embed_size': 64,
-        'hidden_size': 64,
+        'embed_size': input_args.dim,
+        'hidden_size': input_args.dim,
         'num_layers': 4,
-        'encoder_attn': True
+        'encoder_attn': True,
+        'encoder_append_window': True  # This matters only when encoder_attn is set to False
     }
     print('Neural Network parameters:')
     print(f"architecture={model_type}, embed_size={nn_args['embed_size']}, hidden_size={nn_args['hidden_size']}, num_layers={nn_args['num_layers']}")
     print(nn_args)
     print('')
     if model_type == 'MLP':
-        model = MCTS_MLP(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length, encoder_attn=nn_args['encoder_attn'])
+        # seems like MLP doesn't need encoder attn; MLP needs encoder_append_window
+        # benefits from increasing outer iters from 3 to 5
+        model = MCTS_MLP(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length, 
+                        encoder_attn=nn_args['encoder_attn'], encoder_append_window=nn_args['encoder_append_window'])
     elif model_type == 'GRU':
-        model = MCTS_GRU(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length, encoder_attn=nn_args['encoder_attn'])
+        # seems like GRU needs encoder attn
+        # benefits from increasing outer iters from 3 to 5
+        model = MCTS_GRU(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length, 
+                        encoder_attn=nn_args['encoder_attn'], encoder_append_window=nn_args['encoder_append_window'])
     elif model_type == 'TFR':
+        # seems like TFR doesn't benefit much from increasing outer iters
+        # testing whether using first token as classification head helps, job 2742318 and 2742319
         model = MCTS_Transformer(TERM_TYPES, nn_args['embed_size'], nn_args['hidden_size'], nn_args['num_layers'], sequence_length)
+        del nn_args['encoder_attn']
+        del nn_args['encoder_append_window']
+    elif 'checkpoint-' in model_type:
+        model_tag = model_type.split('-')[-1]
+        model = torch.load(f'mcts_models/mcts_model_{model_tag}.pt')
     else:
         raise NotImplementedError(f'unrecognized model type {model_type}')
     print(model)
@@ -821,16 +872,13 @@ if __name__ == '__main__':
     numIters = 3
     numEpisodes = 4
     use_hint = input_args.hint
-    print('Neural MCTS training parameters:')
-    print(f'# of iterations={numIters}, # of episodes per iteration={numEpisodes}')
-    print('Using hint?', use_hint)
+    print(f'Neural MCTS training parameters:\n# of iterations={numIters}, # of episodes per iteration={numEpisodes}\nUsing hint? {use_hint}')
 
     print('='*30 + 'Training begins now' + '='*30)
-
     # Training
     collect_first = input_args.collect_first
     epochs = 20
-    outer_iters = 5
+    outer_iters = input_args.outer_iters
     learning_rate_init = 5*1e-5
     print('Initial learning rate =', learning_rate_init)
 
@@ -871,6 +919,22 @@ if __name__ == '__main__':
                 trainer.learn(reward=reward)
                 for e in trainer.examples:
                     all_examples.append([seq]+e)
+            print("Number of training examples collected =", len(all_examples))
+
+            # Check data imbalance
+            positive_examples_count = 0
+            positive_eos_examples_count = 0
+            negative_eos_examples_count = 0
+            for e in all_examples:
+                if e[3] > 0:
+                    positive_examples_count += 1
+                    if e[1][-5:] == '<EOS>':
+                        positive_eos_examples_count += 1
+                elif e[1][-5:] == '<EOS>': 
+                    negative_eos_examples_count += 1
+            
+            print(f'Number of positive examples = {positive_examples_count}, Number of negative examples = {len(all_examples) - positive_examples_count}')
+            print(f'Number of positive EOS examples = {positive_eos_examples_count}, Number of negative EOS examples = {negative_eos_examples_count}')
 
             # train model
             random.shuffle(all_examples)
@@ -958,8 +1022,6 @@ if __name__ == '__main__':
     #with open('mcts_training_examples.pkl', 'wb') as f:
     #    pickle.dump(all_examples, f)
 
-    # Save model
-    #torch.save(model, f'mcts_models/mcts_model_{rand_tag}.pt')
 
     # Evaluation
     print('='*30 + 'Evaluation begins now' + '='*30)
@@ -981,10 +1043,14 @@ if __name__ == '__main__':
     print('Mean RMSE on test data:', avg_rmse)
     print('Number of perfectly solved examples:', perfect_counts)
 
-    # save experiment run results to csv file
-    csv_filename = 'mcts_experiment_results_new.csv'
-    save_results(csv_filename, rand_tag, avg_rmse, perfect_counts, TERM_TYPES, nterms, model_type, use_hint, nn_args, 
-                mcts_args['numMCTSSims'], mcts_args['maxTreeLevel'], mcts_args['cpuct'], numIters, numEpisodes, reward, epochs, outer_iters)
+    if not input_args.test_code:
+        # Save model
+        torch.save(model, f'mcts_models/mcts_model_{rand_tag}.pt')
+
+        # save experiment run results to csv file
+        csv_filename = 'mcts_experiment_results_new.csv'
+        save_results(csv_filename, rand_tag, avg_rmse, perfect_counts, TERM_TYPES, nterms, model_type, use_hint, nn_args, 
+                    mcts_args['numMCTSSims'], mcts_args['maxTreeLevel'], mcts_args['cpuct'], numIters, numEpisodes, reward, epochs, outer_iters)
     
     
 
