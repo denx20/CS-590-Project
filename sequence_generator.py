@@ -10,15 +10,14 @@ import torch
 from tqdm import tqdm
 
 # training set seed
-np.random.seed(590)
+# np.random.seed(590)
 
 # test set seed
-# np.random.seed(290)
+np.random.seed(290)
 
 
 def make_possible_terms(use_interaction=False):
     """Generates a collection of all the possible individual terms. When generating functions, we randomly select terms from this list and assign random integer coefficients to it."""
-
     possible_terms = []
 
     # 1, n, n^2 and n^3
@@ -108,6 +107,7 @@ def make_n_random_functions(
     ) = make_possible_functions_with_bound(
         nterms=nterms, sequence_bound=sequence_bound, use_interaction=use_interaction
     )
+    print(num_possible_terms)
 
     max_num_coeff = (coefficient_range[1] - coefficient_range[0] + 1) ** nterms
     max_n = len(possible_functions) * max_num_coeff
@@ -260,7 +260,7 @@ if __name__ == "__main__":
     # n_random_functions = make_n_random_functions(
     #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
     n_random_functions = make_train_set(
-        ratios=[0, 1], n=800)
+        ratios=[0, 0, 0, 0, 1], n=200, use_interaction=True, sequence_bound=2000)
     end = timeit.default_timer()
     print("Time elapsed", end - start)
     f_strs = [(str(x[0]), str(x[1])) for x in n_random_functions]
@@ -270,7 +270,7 @@ if __name__ == "__main__":
             print(s)
         else:
             seen.add(s)
-    with open("data/train/2/2.csv", "w") as f:
+    with open("data/test/5/5_int.csv", "w") as f:
         for function in n_random_functions:
             f.write(f"{','.join([str(i) for i in function])}\n")
     f.close()
