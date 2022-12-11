@@ -43,7 +43,7 @@ def make_possible_terms(use_interaction=False):
     if use_interaction:
         for index_diff1 in range(1, 3):
             # multiplication is commutative
-            for index_diff2 in range(index_diff1, 4):
+            for index_diff2 in range(index_diff1+1, 4):
                 for exponent1 in range(1, 3):
                     for exponent2 in range(1, 3):
                         possible_terms.append(
@@ -256,24 +256,53 @@ def make_train_set(ratios=[0, 0.5, 0.5], n=1600,
 
 
 if __name__ == "__main__":
-    start = timeit.default_timer()
-    # n_random_functions = make_n_random_functions(
-    #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
-    n_random_functions = make_train_set(
-        ratios=[0, 0, 0, 0, 1], n=200, use_interaction=True, sequence_bound=2000)
-    end = timeit.default_timer()
-    print("Time elapsed", end - start)
-    f_strs = [(str(x[0]), str(x[1])) for x in n_random_functions]
-    seen = set()
-    for s in f_strs:
-        if s in seen:
-            print(s)
-        else:
-            seen.add(s)
-    with open("data/test/5/5_int.csv", "w") as f:
-        for function in n_random_functions:
-            f.write(f"{','.join([str(i) for i in function])}\n")
-    f.close()
+    '''
+    # generate train data
+    for nterms in range(2,4):
+        start = timeit.default_timer()
+        # n_random_functions = make_n_random_functions(
+        #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
+        ratios = [0]*5
+        ratios[nterms-1] = 1
+        n_random_functions = make_train_set(
+            ratios=ratios, n=800, use_interaction=True, sequence_bound=2000)
+        end = timeit.default_timer()
+        print("Time elapsed", end - start)
+        f_strs = [(str(x[0]), str(x[1])) for x in n_random_functions]
+        seen = set()
+        for s in f_strs:
+            if s in seen:
+                print(s)
+            else:
+                seen.add(s)
+        with open(f"data/train/{nterms}/{nterms}_int.csv", "w") as f:
+            for function in n_random_functions:
+                f.write(f"{','.join([str(i) for i in function])}\n")
+        f.close()
+    '''
+    
+    # generate test data
+    for nterms in range(2,6):
+        start = timeit.default_timer()
+        # n_random_functions = make_n_random_functions(
+        #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
+        ratios = [0]*5
+        ratios[nterms-1] = 1
+        n_random_functions = make_train_set(
+            ratios=ratios, n=200, use_interaction=True, sequence_bound=2000)
+        end = timeit.default_timer()
+        print("Time elapsed", end - start)
+        f_strs = [(str(x[0]), str(x[1])) for x in n_random_functions]
+        seen = set()
+        for s in f_strs:
+            if s in seen:
+                print(s)
+            else:
+                seen.add(s)
+        with open(f"data/test/{nterms}/{nterms}_int.csv", "w") as f:
+            for function in n_random_functions:
+                f.write(f"{','.join([str(i) for i in function])}\n")
+        f.close()
 
 
 # DEPRECATED: USE make_random_function() INSTEAD

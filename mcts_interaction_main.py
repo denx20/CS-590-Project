@@ -31,6 +31,20 @@ for index_diff in range(1, 4):
     for power in range(1, 3):
         POSSIBLE_TERMS.append(FunctionTerm(type="power_term", exponent1=power,index_diff1=index_diff))
 
+for index_diff1 in range(1, 3):
+    for index_diff2 in range(index_diff1+1, 4):
+        for exponent1 in range(1, 3):
+            for exponent2 in range(1, 3):
+                POSSIBLE_TERMS.append(
+                    FunctionTerm(
+                        type="interaction_term",
+                        exponent1=exponent1,
+                        exponent2=exponent2,
+                        index_diff1=index_diff1,
+                        index_diff2=index_diff2,
+                    )
+                )
+
 
 def generate_term_to_id_map():
     i = 0
@@ -752,9 +766,9 @@ def save_results(csv_name, tag, avg_rmse, correct_count, term_types, nterms, mod
 def load_data(nterms, train_data=True):
     # return a list [sequence, mask] elements
     if train_data:
-        df = pd.read_csv(f'data/train/{nterms}/{nterms}.csv', names=['prompt', 'completion'], delimiter='],', engine='python')
+        df = pd.read_csv(f'data/train/{nterms}/{nterms}_int.csv', names=['prompt', 'completion'], delimiter='],', engine='python')
     else:
-        df = pd.read_csv(f'data/test/{nterms}/{nterms}.csv', names=['prompt', 'completion'], delimiter='],', engine='python')
+        df = pd.read_csv(f'data/test/{nterms}/{nterms}_int.csv', names=['prompt', 'completion'], delimiter='],', engine='python')
     
     data = []
     for i in range(len(df)):
@@ -838,7 +852,7 @@ if __name__ == '__main__':
     nn_args = {
         'embed_size': input_args.dim,
         'hidden_size': input_args.dim,
-        'num_layers': input_args.layers,
+        'num_layers': 4,
         'encoder_attn': True,
         'encoder_append_window': True  # This matters only when encoder_attn is set to False
     }
