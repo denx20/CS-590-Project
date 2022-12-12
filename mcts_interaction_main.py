@@ -903,9 +903,9 @@ if __name__ == '__main__':
         best_valid_loss = float('inf')
 
         mse_loss = torch.nn.MSELoss()
-        ce_loss = torch.nn.CrossEntropyLoss()
+        bce_loss = torch.nn.BCELoss()
         def loss_fn(nn_reward, nn_policy, mcts_reward, mcts_policy):
-            return mse_loss(nn_reward, mcts_reward) + ce_loss(nn_policy, mcts_policy)
+            return mse_loss(nn_reward, mcts_reward) + bce_loss(nn_policy, mcts_policy)
 
         for iter in range(outer_iters):
             print('Outer Iter', iter+1)
