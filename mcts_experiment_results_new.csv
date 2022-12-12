@@ -50,3 +50,19 @@
 48,mflyugmvzj,12,3,9.954601709953213,28,GRU,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': False, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
 49,ueilxbjzij,12,3,9.432767070325793,20,GRU,"{'embed_size': 64, 'hidden_size': 64, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,7,False,1000,4,1,3,4,10
 50,nyssfkczbu,12,3,11.607720803278776,38,GRU,"{'embed_size': 64, 'hidden_size': 64, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,7,False,1000,4,1,3,4,10
+51,dhnfhefatx,12,2,14.295563159493206,54,MLP,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
+52,bhgreqxajd,12,2,13.486094328223714,68,GRU,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
+53,onwushizmg,12,2,17.770420984552842,64,GRU,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
+54,lbxqbtwhbx,12,2,15.907875594092898,68,TFR,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4}",20,5,False,1000,4,1,3,4,10
+55,ezgaxikmrj,12,2,16.226478839454114,63,TFR,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4}",20,5,False,1000,4,1,3,4,10
+56,yahdbtaeag,12,3,7.944835092595913,49,TFR,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4}",20,5,False,1000,4,1,3,4,10
+57,gescrhdbcq,12,3,11.60902235068999,26,TFR,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4}",20,5,False,1000,4,1,3,4,10
+58,aohwnirffy,24,2,34.67533902764921,20,MLP,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
+59,ayaufvxlej,12,3,9.314864931504538,33,MLP,"{'embed_size': 512, 'hidden_size': 512, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,7,False,1000,4,1,3,4,10
+60,hndyrasitz,12,3,9.79885482169476,36,MLP,"{'embed_size': 512, 'hidden_size': 512, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,7,False,1000,4,1,3,4,10
+61,sxygnjcsey,24,3,140.92958028293478,13,MLP,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
+62,obvmunodqi,24,2,26.78251245125149,38,GRU,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
+63,cywhebvvmo,12,3,7.8228894605977235,37,TFR,"{'embed_size': 512, 'hidden_size': 512, 'num_layers': 4}",20,7,False,1000,4,1,3,4,10
+64,pqlnbgrmur,12,3,11.339474513040786,28,TFR,"{'embed_size': 512, 'hidden_size': 512, 'num_layers': 4}",20,7,False,1000,4,1,3,4,10
+65,irdbvfswom,24,2,16.295669107974145,54,TFR,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4}",20,5,False,1000,4,1,3,4,10
+66,ykulqwhvye,24,3,90.44961508384506,7,MLP,"{'embed_size': 256, 'hidden_size': 256, 'num_layers': 4, 'encoder_attn': True, 'encoder_append_window': True}",20,5,False,1000,4,1,3,4,10
