@@ -852,7 +852,7 @@ if __name__ == '__main__':
     nn_args = {
         'embed_size': input_args.dim,
         'hidden_size': input_args.dim,
-        'num_layers': 4,
+        'num_layers': input_args.layers,
         'encoder_attn': True,
         'encoder_append_window': True  # This matters only when encoder_attn is set to False
     }
@@ -888,7 +888,7 @@ if __name__ == '__main__':
     collect_first = input_args.collect_first
     epochs = 20
     outer_iters = input_args.outer_iters
-    learning_rate_init = 5*1e-5
+    learning_rate_init = 1e-5
     print('Initial learning rate =', learning_rate_init)
 
     opt = torch.optim.Adam(model.parameters(), lr=learning_rate_init)
