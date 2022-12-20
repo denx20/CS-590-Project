@@ -61,6 +61,7 @@ def make_possible_terms(use_interaction=False):
 
 def make_possible_functions(nterms=5, use_interaction=False):
     possible_terms = make_possible_terms(use_interaction)
+    print(len(possible_terms))
     term_combinations = list(itertools.combinations(possible_terms, nterms))
     index_combinations = list(
         itertools.combinations(range(len(possible_terms)), nterms)
@@ -284,8 +285,6 @@ if __name__ == "__main__":
     # generate test data
     for nterms in range(2,6):
         start = timeit.default_timer()
-        # n_random_functions = make_n_random_functions(
-        #     80000, use_interaction=False, coefficient_range=(-5, 5), sequence_bound=1000, initial_terms_range=(1, 3))
         ratios = [0]*5
         ratios[nterms-1] = 1
         n_random_functions = make_train_set(
